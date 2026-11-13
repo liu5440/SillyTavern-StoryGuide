@@ -252,7 +252,6 @@ export class GuidePanel {
           const previousStory = this.story;
           generate.disabled = true;
           this.abort = new AbortController();
-          const timeout = setTimeout(() => this.abort?.abort(), 180000);
           try {
             const story = await this.app.generate(
               {
@@ -291,7 +290,6 @@ export class GuidePanel {
             }
             throw error;
           } finally {
-            clearTimeout(timeout);
             this.busy = false;
             this.abort = undefined;
             generate.disabled = false;

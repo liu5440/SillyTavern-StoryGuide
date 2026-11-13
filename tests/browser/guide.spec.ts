@@ -6,6 +6,32 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await openGuide(page);
 });
+
+test('宿主同步报错后可重试，修复等待显示原因并可取消', async ({ page }) => {
+  await page.evaluate(() => {
+    if (!window.SillyTavern) throw new Error('Missing test host');
+    const context = window.SillyTavern.getContext();
+    context.generateRaw = () => {
+      throw new Error('测试同步失败');
+    };
+  });
+  await page.getByRole('button', { name: '生成故事草稿' }).click();
+  await expect(page.locator('.sg-status')).toContainText('测试同步失败');
+  await page.evaluate(() => {
+    let calls = 0;
+    if (!window.SillyTavern) throw new Error('Missing test host');
+    window.SillyTavern.getContext().generateRaw = async () => {
+      calls++;
+      if (calls === 1) return 'invalid';
+      return new Promise<string>(() => {});
+    };
+  });
+  await page.getByRole('button', { name: '生成故事草稿' }).click();
+  await expect(page.locator('.sg-status')).toContainText('不是有效 JSON');
+  await expect(page.locator('.sg-status')).toContainText('已等待 1 秒');
+  await page.getByRole('button', { name: '取消生成', exact: true }).click();
+  await expect(page.getByRole('button', { name: '生成故事草稿' })).toBeEnabled();
+});
 test('无书创作、剧透控制、安全文本、采用、进度与刷新恢复', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '艾琳的剧情指南' })).toBeVisible();
   await page.getByRole('button', { name: '生成故事草稿' }).click();

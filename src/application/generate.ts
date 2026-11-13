@@ -1,3 +1,4 @@
+import { requestModel } from './model-request';
 import { z } from 'zod';
 import {
   nodeSchema,
@@ -111,19 +112,39 @@ export async function generateStory(
     if (signal.aborted) throw new Error('已取消生成');
     if (!host.isCurrent(snapshot)) throw new Error('角色或聊天已切换，已丢弃旧任务');
   };
+  let stage = '正在请求模型';
   const request = async (prompt: string, context: ContextSnapshot, outputMode = mode) => {
-    const raw = await host.generate(prompt, signal);
+    const raw = await requestModel(host, prompt, signal, stage, progress);
     guard();
     try {
       return decodeDraft(raw, context, outputMode);
     } catch (error) {
-      progress('输出未通过校验，正在尝试一次格式修复…');
-      const fixed = await host.generate(
-        repairPrompt(raw, error instanceof Error ? error.message : '格式错误'),
+      const reason =
+        error instanceof z.ZodError
+          ? error.issues
+              .slice(0, 3)
+              .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+              .join('；')
+          : error instanceof SyntaxError
+            ? '模型返回的内容不是有效 JSON'
+            : error instanceof Error
+              ? error.message.slice(0, 500)
+              : '格式错误';
+      const fixed = await requestModel(
+        host,
+        repairPrompt(raw, reason),
         signal,
+        `首次校验失败（${reason}），正在进行唯一一次格式修复`,
+        progress,
       );
       guard();
-      return decodeDraft(fixed, context, outputMode);
+      try {
+        return decodeDraft(fixed, context, outputMode);
+      } catch {
+        throw new Error(
+          `格式修复后仍未通过校验，已停止；首次原因：${reason}。请减少资料范围或检查模型输出能力后重试。`,
+        );
+      }
     }
   };
   try {
@@ -132,17 +153,17 @@ export async function generateStory(
     if (mode === 'create') {
       if (batches.length > 2)
         throw new Error('创作资料超过 24000 字符，请减少选中资料后创作；原资料解析支持分批');
-      progress('正在创作章节与分支…');
+      stage = '正在创作章节与分支…';
       return await request(storyPrompt(mode, brief, snapshot.sources), snapshot);
     }
     if (!batches.length) throw new Error('没有可解析资料，请选择创作模式');
     for (let i = 0; i < batches.length; i++) {
       guard();
-      progress(`正在解析第 ${i + 1} / ${batches.length} 批资料…`);
+      stage = `正在解析第 ${i + 1} / ${batches.length} 批资料…`;
       partials.push(await request(storyPrompt(mode, brief, batches[i]), snapshot));
     }
     if (partials.length === 1) return partials[0]!;
-    progress('正在合并事件与路线…');
+    stage = '正在合并事件与路线…';
     const drafts = partials.map((s) => ({
       title: s.title,
       summary: s.summary,

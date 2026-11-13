@@ -18,6 +18,25 @@ const draft = () => {
   const f = fixture();
   return { title: f.title, summary: f.summary, nodes: f.nodes, edges: f.edges };
 };
+test('格式失败显示原因，只允许一次修复且失败后结束', async () => {
+  let calls = 0;
+  const messages: string[] = [];
+  const host = {
+    generate: async () => {
+      calls++;
+      return 'invalid';
+    },
+    isCurrent: () => true,
+  } as unknown as Host;
+  await assert.rejects(
+    generateStory(host, { snapshot, mode: 'create', brief: '' }, new AbortController().signal, (text) =>
+      messages.push(text),
+    ),
+    /修复后仍未通过校验/,
+  );
+  assert.equal(calls, 2);
+  assert.ok(messages.some((text) => text.includes('不是有效 JSON') && text.includes('已等待')));
+});
 test('分批不截断长条目，原始引用 ID 保持不变', () => {
   const chunks = splitSources([{ ...source, text: '字'.repeat(25001) }]);
   assert.equal(chunks.length, 3);
