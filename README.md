@@ -19,14 +19,18 @@
 
 ## 安装到酒馆
 
-发布到 GitHub 后：
+使用以下公开仓库地址安装：
+
+```text
+https://github.com/liu5440/SillyTavern-StoryGuide
+```
 
 1. 打开 SillyTavern → 扩展 → 安装扩展。
-2. 粘贴**本项目实际的 GitHub 仓库首页 URL**（不是 ZIP 下载地址，也不是某个文件的地址）。
+2. 粘贴上方 GitHub 仓库地址。
 3. 点击“只给我安装”，刷新酒馆页面。
 4. 在扩展设置找到 **剧情指南 → 打开剧情指南**。
 
-当前工作区尚未发布到 GitHub，不能把本地路径当作远程安装地址。发布操作见 [GitHub 发布说明](docs/publishing.md)。
+发布与更新操作见 [GitHub 发布说明](docs/publishing.md)。
 
 也可先手动安装：将 `manifest.json`、`style.css` 和整个 `dist` 目录放到：
 
@@ -83,4 +87,4 @@ npm run test:browser
 - [验证记录与当前限制](docs/verification.md)
 - [AI 开发约束](AGENTS.md)
 
-MIT License。打包的 Zod 许可见 `THIRD-PARTY-NOTICES.txt`。
+AGPL-3.0 License（沿用目标仓库的许可证）。打包的 Zod 许可见 `THIRD-PARTY-NOTICES.txt`。
