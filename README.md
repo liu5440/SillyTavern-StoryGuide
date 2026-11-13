@@ -34,6 +34,8 @@ https://github.com/liu5440/SillyTavern-StoryGuide
 
 发布与更新操作见 [GitHub 发布说明](docs/publishing.md)。
 
+已安装的用户在“管理扩展程序”中更新并刷新即可，**无需先卸载重装**。“目录已存在”、无法更新或删除时，参见 [更新与卸载排查](docs/troubleshooting.md)。
+
 也可先手动安装：将 `manifest.json`、`style.css` 和整个 `dist` 目录放到：
 
 ```text
