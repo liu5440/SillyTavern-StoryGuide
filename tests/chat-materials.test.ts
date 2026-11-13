@@ -1,7 +1,12 @@
 import 'fake-indexeddb/auto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { selectChatMessages, decodeChatMaterials, type ChatCapture } from '../src/domain/chat-materials.ts';
+import {
+  selectChatMessages,
+  decodeChatMaterials,
+  planChatBatches,
+  type ChatCapture,
+} from '../src/domain/chat-materials.ts';
 import { ChatMaterialsController } from '../src/application/chat-materials.ts';
 import { Repository } from '../src/storage/repository.ts';
 import type { ContextSnapshot } from '../src/host/tavern.ts';
@@ -144,7 +149,7 @@ test('保存等待数据库期间消息变化，事务中止且不留下素材',
   assert.equal((await state.repository.loadMaterials('u', 'alice.png')).length, 0);
 });
 
-test('提交超过12000字符不调用模型，保存前关闭使批量事务中止', async () => {
+test('提交超过50条不调用模型，保存前关闭使批量事务中止', async () => {
   let calls = 0;
   const state = setup(async () => {
     calls++;
@@ -153,11 +158,11 @@ test('提交超过12000字符不调用模型，保存前关闭使批量事务中
   const read = state.app.read(1, 3);
   await assert.rejects(
     state.app.generate(
-      { ...read, messages: [{ ...messages[1]!, text: '长'.repeat(12001) }] },
-      [3],
+      { ...read, messages: Array.from({ length: 51 }, (_, i) => ({ ...messages[1]!, number: i + 1 })) },
+      Array.from({ length: 51 }, (_, i) => i + 1),
       new AbortController().signal,
     ),
-    /12000/,
+    /50/,
   );
   assert.equal(calls, 0);
   const draft = await state.app.generate(read, [3], new AbortController().signal);
@@ -184,4 +189,88 @@ test('最后一条写请求成功但事务未提交时取消，仍回滚整批',
   } finally {
     IDBObjectStore.prototype.add = add;
   }
+});
+
+test('50条长消息分批不截断，单条长消息保留原文偏移', () => {
+  const rows = Array.from({ length: 50 }, (_, i) => ({
+    number: i + 1,
+    role: 'character' as const,
+    speaker: '成年角色',
+    text: '内容'.repeat(3000),
+  }));
+  const batches = planChatBatches(rows);
+  assert.ok(batches.length > 1);
+  for (const batch of batches) assert.ok(batch.reduce((n, m) => n + m.text.length, 0) <= 12000);
+  for (const row of rows)
+    assert.equal(
+      batches
+        .flat()
+        .filter((m) => m.number === row.number)
+        .map((m) => m.text)
+        .join(''),
+      row.text,
+    );
+  const original = { ...rows[0]!, text: '前'.repeat(12000) + '后'.repeat(2000) };
+  const split = planChatBatches([original]);
+  const response = output()
+    .replace('"messageNumber":3', '"messageNumber":1')
+    .replace('她把另一杯热茶推向你。', '后后');
+  const card = decodeChatMaterials(response, { ...capture, messages: split[1]! }, [original])[0]!;
+  assert.equal(card.source?.text, original.text);
+  assert.equal(card.source?.start, 12000);
+});
+
+test('超过12000字符自动多次调用，失败保留已完成草稿并可导出完整原文', async () => {
+  let calls = 0;
+  const state = setup(async (prompt) => {
+    calls++;
+    if (calls === 2) throw new Error('第二批网络中断');
+    const data = JSON.parse(prompt.slice(prompt.lastIndexOf('\n[') + 1)) as {
+      number: number;
+      text: string;
+    }[];
+    return JSON.stringify({
+      materials: [
+        {
+          title: '日常片段',
+          category: 'scene',
+          tags: [],
+          description: '成年朋友一起散步。',
+          opening: '要一起走走吗？',
+          messageNumber: data[0]!.number,
+          quote: data[0]!.text.slice(0, 10),
+        },
+      ],
+    });
+  });
+  const rows = Array.from({ length: 50 }, (_, i) => ({
+    number: i + 1,
+    role: 'character' as const,
+    speaker: '成年角色',
+    text: '普通日常'.repeat(400),
+  }));
+  const read = { ...capture, messages: rows };
+  const draft = await state.app.generate(
+    read,
+    rows.map((m) => m.number),
+    new AbortController().signal,
+  );
+  assert.equal(calls, 2);
+  assert.equal(draft.completedBatches, 1);
+  assert.ok(draft.error);
+  assert.equal(draft.cards.length, 1);
+  const archive = state.app.archive(
+    read,
+    rows.map((m) => m.number),
+    draft,
+    draft.cards,
+  );
+  assert.equal(archive.messages.length, 50);
+  assert.equal(archive.status, 'partial');
+  assert.equal(archive.messages.map((m) => m.text).join(''), rows.map((m) => m.text).join(''));
+  await state.app.saveArchive(archive);
+  assert.equal((await state.repository.loadChatArchives('u', 'alice.png')).length, 1);
+  assert.equal((await state.repository.loadChatArchives('u', 'other.png')).length, 0);
+  await state.repository.removeChatArchive('u', 'alice.png', archive.id);
+  assert.equal((await state.repository.loadChatArchives('u', 'alice.png')).length, 0);
 });

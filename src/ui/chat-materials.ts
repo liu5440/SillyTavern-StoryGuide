@@ -1,8 +1,9 @@
 import type { MaterialsController } from '../application/materials';
 import type { ChatMaterialDraft } from '../application/chat-materials';
-import type { ChatCapture } from '../domain/chat-materials';
+import { planChatBatches, type ChatCapture } from '../domain/chat-materials';
+import { chatArchiveFileName } from '../domain/chat-archive';
 import { materialCategories, type Material } from '../domain/materials';
-import { el, button, check, field, showModal } from './dom';
+import { el, button, check, field, showModal, download } from './dom';
 
 /** UI只收集范围与审阅结果，读取、模型调用和写入均由应用层负责。 */
 export function openChatMaterials(materials: MaterialsController, saved: () => Promise<void>) {
@@ -27,7 +28,8 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
     const summary = el('p', 'sg-chat-selection');
     let capture: ChatCapture | undefined, draft: ChatMaterialDraft | undefined;
     let selected = new Set<number>();
-    let abort: AbortController | undefined, timer: ReturnType<typeof setTimeout> | undefined;
+    let abort: AbortController | undefined;
+    let previewCount = 0;
     let busy = false,
       unsubscribe = () => {};
     let edits: {
@@ -65,6 +67,7 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
       selected.clear();
       resetResults();
       generate.disabled = true;
+      updateSummary();
       message('聊天内容已变化，请重新预览；旧结果不可保存。', true);
     };
     const selectedSize = () => {
@@ -73,7 +76,12 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
     };
     const updateSummary = () => {
       const { count, size } = selectedSize();
-      summary.textContent = `选中${count}条 · ${size}字符。将只把这些消息发给酒馆当前模型；一次最多50条、12000字符。`;
+      const messages = capture?.messages.filter((m) => selected.has(m.number)) ?? [];
+      const batches = count > 0 && count <= 50 ? planChatBatches(messages).length : 0;
+      summary.textContent = `选中${count}条 · ${size}字符。${batches ? `将自动分${batches}批，预计调用模型${batches}次；单批最多12000字符，不需要手动拆分。` : '请选择1–50条消息。'}将只把这些消息发给酒馆当前模型。`;
+      generate.disabled = busy || !batches;
+      exportChat.disabled = busy || !batches;
+      saveArchive.disabled = busy || !batches;
     };
     const preview = button('预览当前范围', () => {
       try {
@@ -104,11 +112,12 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
           row.append(include.root, text);
           sourceList.append(row);
         }
+        sourceList.scrollTop = 0;
+        previewCount++;
         updateSummary();
-        generate.disabled = !next.messages.length;
         message(
           next.messages.length
-            ? '已读取当前范围。系统和空消息已排除，核对勾选后开始整理。'
+            ? `已刷新第${previewCount}次预览：第${start.input.value}–${end.input.value}条，载入${next.messages.length}条有效消息。系统和空消息已排除。`
             : '此范围没有可整理消息，系统和空消息已排除。',
         );
       } catch (error) {
@@ -137,14 +146,18 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
           generate.disabled = true;
           preview.disabled = true;
           abort = new AbortController();
-          timer = setTimeout(() => abort?.abort(), 180000);
           const { count, size } = selectedSize();
-          message(`正在使用酒馆当前${app.info().api}连接整理${count}条、${size}字符…（最多等待180秒）`);
-          const next = await app.generate(capture, [...selected], abort.signal);
+          message(`正在使用酒馆当前${app.info().api}连接整理${count}条、${size}字符…（每批最多180秒）`);
+          const next = await app.generate(capture, [...selected], abort.signal, (text) => message(text));
           guard();
           draft = next;
           if (!next.cards.length) {
-            message('模型未发现适合的非露骨素材，未保存任何条目。可调整选中范围重试。');
+            message(
+              next.error
+                ? `部分完成：${next.completedBatches}/${next.totalBatches}批。${next.error}。可保存或导出原文归档。`
+                : '模型未发现适合的非露骨素材，未保存任何条目。可直接保存或导出原文归档。',
+              !!next.error,
+            );
             return;
           }
           for (const [index, card] of next.cards.entries()) {
@@ -212,36 +225,91 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
                 cancel.disabled = false;
                 save.disabled = false;
                 preview.disabled = false;
-                generate.disabled = !capture;
+                updateSummary();
               }
             },
             'sg-primary',
           );
           results.append(save);
-          message(`已生成${next.cards.length}条草稿，尚未保存。请核对摘录、编辑内容并选择保存。`);
+          message(
+            `${next.error ? `部分完成：${next.completedBatches}/${next.totalBatches}批，${next.error}。` : `已完成${next.totalBatches}批。`}已生成${next.cards.length}条草稿，尚未保存。可保存素材或另存聊天归档。`,
+            !!next.error,
+          );
         } catch (error) {
           message(error instanceof Error ? error.message : '整理失败，未保存素材', true);
         } finally {
-          if (timer) clearTimeout(timer);
           setBusy(false);
-          generate.disabled = !capture;
+          updateSummary();
           preview.disabled = false;
         }
       },
       'sg-primary',
     );
     generate.disabled = true;
+    const getArchive = () => {
+      guard();
+      if (!capture) throw new Error('请先预览并选择消息');
+      const cards = draft
+        ? edits
+            .filter((edit) => edit.keep.checked)
+            .map((edit) => ({
+              ...edit.card,
+              title: edit.title.value,
+              description: edit.description.value,
+              opening: edit.opening.value,
+              category: edit.category.value as Material['category'],
+            }))
+        : [];
+      return app.archive(capture, [...selected], draft, cards);
+    };
+    const exportChat = button('导出所选聊天JSON', () => {
+      try {
+        if (busy) throw new Error('请先等待或取消当前任务');
+        const archive = getArchive();
+        download(chatArchiveFileName(archive), archive);
+        message(`已导出${archive.messages.length}条完整消息及${archive.materials.length}条整理结果`);
+      } catch (error) {
+        message(error instanceof Error ? error.message : '导出失败', true);
+      }
+    });
+    const saveArchive = button('保存聊天归档', async () => {
+      if (busy) return;
+      try {
+        const archive = getArchive();
+        setBusy(true);
+        generate.disabled = true;
+        preview.disabled = true;
+        cancel.disabled = true;
+        abort = new AbortController();
+        await app.saveArchive(archive, abort.signal);
+        guard();
+        message(
+          `已保存${archive.messages.length}条消息的${archive.status === 'partial' ? '部分整理' : ''}归档，可在素材库“聊天剧情归档”中再次导出。`,
+        );
+      } catch (error) {
+        message(error instanceof Error ? error.message : '归档保存失败', true);
+      } finally {
+        setBusy(false);
+        preview.disabled = false;
+        cancel.disabled = false;
+        updateSummary();
+      }
+    });
+    exportChat.disabled = true;
+    saveArchive.disabled = true;
     for (const input of [start.input, end.input])
       input.addEventListener('input', () => {
         invalidate();
         sourceList.replaceChildren();
         summary.textContent = '';
+        exportChat.disabled = true;
+        saveArchive.disabled = true;
         message('消息范围已调整，请重新预览。');
       });
-    const range = el('div', 'sg-material-controls');
+    const range = el('div', 'sg-material-controls sg-chat-range');
     range.append(start.root, end.root, preview);
     const actions = el('div', 'sg-toolbar');
-    actions.append(generate, cancel);
+    actions.append(generate, cancel, saveArchive, exportChat);
     body.append(
       el(
         'p',
@@ -263,7 +331,6 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
         'close',
         () => {
           abort?.abort();
-          if (timer) clearTimeout(timer);
           unsubscribe();
         },
         { once: true },
@@ -272,7 +339,7 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
       try {
         const current = app.info();
         info.textContent = `当前共有${current.total}条消息 · 模型连接：${current.api}`;
-        start.input.value = String(Math.max(1, current.total - 19));
+        start.input.value = String(Math.max(1, current.total - 49));
         end.input.value = String(Math.max(1, current.total));
         if (!current.total) {
           preview.disabled = true;

@@ -556,7 +556,8 @@
   margin: 10px 0;
 }
 .sg-chat-message,
-.sg-chat-draft {
+.sg-chat-draft,
+.sg-chat-archive {
   border: 1px solid var(--sg-line);
   border-radius: 8px;
   margin: 10px 0;
@@ -566,6 +567,16 @@
 .sg-chat-message-list {
   max-height: 260px;
   overflow: auto;
+}
+.sg-chat-range {
+  align-items: flex-end;
+}
+.sg-chat-range .sg-field {
+  margin: 0;
+  min-width: 0;
+}
+.sg-chat-range > .sg-button {
+  margin-bottom: 0;
 }
 .sg-material-opening {
   border-left: 3px solid #bda780;

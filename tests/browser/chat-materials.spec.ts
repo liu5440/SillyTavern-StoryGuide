@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { openGuide } from './helpers';
+import { readFile } from 'node:fs/promises';
 
 const result = {
   materials: [
@@ -98,4 +99,78 @@ test('取消在途请求、消息修改与非JSON不会产生可保存素材', a
   });
   await expect(page.locator('.sg-chat-material-status')).toContainText('变化');
   await expect(page.getByRole('button', { name: '用当前模型整理' })).toBeDisabled();
+});
+
+test('50条长消息自动分批，原文与结果归档后可导出', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => {
+    const c = window.SillyTavern?.getContext();
+    if (!c) throw new Error('缺宿主');
+    c.chat = Array.from({ length: 50 }, (_, i) => ({
+      mes: `第${i + 1}段成年朋友日常。` + '日常'.repeat(1500),
+      name: '成年朋友',
+      is_user: false,
+    }));
+    (window as unknown as { batchCalls: number }).batchCalls = 0;
+    c.generateRaw = async (options) => {
+      (window as unknown as { batchCalls: number }).batchCalls++;
+      const data = JSON.parse(options.prompt.slice(options.prompt.lastIndexOf('\n[') + 1)) as {
+        number: number;
+        text: string;
+      }[];
+      return JSON.stringify({
+        materials: [
+          {
+            title: `日常${data[0]!.number}`,
+            category: 'scene',
+            tags: [],
+            description: '成年朋友讨论日常。',
+            opening: '一起去散步吧。',
+            messageNumber: data[0]!.number,
+            quote: data[0]!.text.slice(0, 10),
+          },
+        ],
+      });
+    };
+  });
+  await openGuide(page);
+  await expect(page.locator('.sg-status')).toContainText('条资料已读取');
+  await page.getByRole('button', { name: '场景素材库', exact: true }).click();
+  await page.getByRole('button', { name: '从当前聊天整理' }).click();
+  await page.getByRole('button', { name: '预览当前范围' }).click();
+  await expect(page.locator('.sg-chat-message')).toHaveCount(50);
+  await expect(page.locator('.sg-chat-selection')).toContainText('自动分');
+  const rawDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出所选聊天JSON' }).click();
+  const rawPath = await (await rawDownload).path();
+  if (!rawPath) throw new Error('没有导出文件');
+  const raw = JSON.parse(await readFile(rawPath, 'utf8')) as { status: string; messages: unknown[] };
+  expect(raw.messages).toHaveLength(50);
+  expect(raw.status).toBe('raw');
+  expect(await page.evaluate(() => (window as unknown as { batchCalls: number }).batchCalls)).toBe(0);
+  await page.getByRole('button', { name: '用当前模型整理' }).click();
+  await expect(page.locator('.sg-chat-material-status')).toContainText('已完成');
+  expect(await page.evaluate(() => (window as unknown as { batchCalls: number }).batchCalls)).toBeGreaterThan(
+    1,
+  );
+  await page.getByRole('button', { name: '保存聊天归档' }).click();
+  await expect(page.locator('.sg-chat-material-status')).toContainText('已保存50条');
+  await page.getByRole('button', { name: '保存选中素材' }).click();
+  await expect(page.locator('.sg-material-status')).toContainText('已保存');
+  await page.getByLabel('只看个人素材').check();
+  expect(await page.locator('.sg-material-card').count()).toBeGreaterThan(8);
+  await page.getByRole('button', { name: '聊天剧情归档', exact: true }).click();
+  await expect(page.locator('.sg-chat-archive')).toHaveCount(1);
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出归档JSON' }).click();
+  const archivePath = await (await download).path();
+  if (!archivePath) throw new Error('没有归档文件');
+  const archive = JSON.parse(await readFile(archivePath, 'utf8')) as {
+    messages: unknown[];
+    materials: unknown[];
+    status: string;
+  };
+  expect(archive.messages).toHaveLength(50);
+  expect(archive.materials.length).toBeGreaterThan(1);
+  expect(archive.status).toBe('complete');
 });

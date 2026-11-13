@@ -6,6 +6,7 @@ export interface ChatMessage {
   role: 'user' | 'character';
   speaker: string;
   text: string;
+  offset?: number;
 }
 export interface ChatCapture {
   chatKey: string;
@@ -42,7 +43,7 @@ export function selectChatMessages(raw: unknown, start: number, end: number): Ch
     if (!parsed.success) throw new Error(`第${i + 1}条消息结构无效或超过20000字符，请缩小范围`);
     if (!parsed.data.mes.trim()) continue;
     size += parsed.data.mes.length;
-    if (size > 100000) throw new Error('预览范围超过100000字符，请缩小范围；没有截断');
+    if (size > 1000000) throw new Error('预览范围超过1000000字符，请缩小范围；没有截断');
     messages.push({
       number: i + 1,
       role: parsed.data.is_user ? 'user' : 'character',
@@ -51,6 +52,37 @@ export function selectChatMessages(raw: unknown, start: number, end: number): Ch
     });
   }
   return messages;
+}
+
+/** 12000字符是单请求上限；完整消息按顺序分段，偏移仍指向原消息。 */
+export function planChatBatches(messages: ChatMessage[]): ChatMessage[][] {
+  if (!messages.length || messages.length > 50) throw new Error('请选择1–50条消息');
+  const batches: ChatMessage[][] = [];
+  let batch: ChatMessage[] = [],
+    size = 0;
+  for (const message of messages) {
+    if (!message.text.length || message.text.length > 20000) throw new Error('单条消息需为1–20000字符');
+    for (let offset = 0; offset < message.text.length; ) {
+      let end = Math.min(offset + 12000, message.text.length);
+      if (
+        end < message.text.length &&
+        /[\uD800-\uDBFF]/.test(message.text[end - 1] ?? '') &&
+        /[\uDC00-\uDFFF]/.test(message.text[end] ?? '')
+      )
+        end--;
+      const text = message.text.slice(offset, end);
+      if (size + text.length > 12000) {
+        batches.push(batch);
+        batch = [];
+        size = 0;
+      }
+      batch.push({ ...message, text, offset });
+      size += text.length;
+      offset = end;
+    }
+  }
+  if (batch.length) batches.push(batch);
+  return batches;
 }
 
 const resultSchema = z
@@ -65,7 +97,11 @@ const resultSchema = z
   })
   .strict();
 /** 模型只给消息序号与摘录；实际来源及偏移从已选快照构造，不能相信模型标签。 */
-export function decodeChatMaterials(raw: string, capture: ChatCapture): Material[] {
+export function decodeChatMaterials(
+  raw: string,
+  capture: ChatCapture,
+  originals: ChatMessage[] = capture.messages,
+): Material[] {
   if (raw.length > 80000) throw new Error('模型返回超过80000字符，未采用');
   const text = raw.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i, '$1');
   let value: unknown;
@@ -78,9 +114,19 @@ export function decodeChatMaterials(raw: string, capture: ChatCapture): Material
   if (!result.success)
     throw new Error('模型素材结构无效，需包含materials数组、分类、描述、开场、消息序号和摘录（最多8条）');
   return result.data.materials.map((item) => {
-    const message = capture.messages.find((m) => m.number === item.messageNumber);
-    const start = message?.text.indexOf(item.quote) ?? -1;
-    if (!message || start < 0 || !item.quote.trim())
+    const message = capture.messages.find(
+      (m) => m.number === item.messageNumber && m.text.includes(item.quote),
+    );
+    const relative = message?.text.indexOf(item.quote) ?? -1;
+    const original = originals.find((m) => m.number === item.messageNumber);
+    const start = relative + (message?.offset ?? 0);
+    if (
+      !message ||
+      !original ||
+      relative < 0 ||
+      !item.quote.trim() ||
+      original.text.slice(start, start + item.quote.length) !== item.quote
+    )
       throw new Error(`素材「${item.title}」引用不在选中消息中，整批未保存`);
     const { messageNumber, quote, ...content } = item;
     return materialSchema.parse({
@@ -92,7 +138,7 @@ export function decodeChatMaterials(raw: string, capture: ChatCapture): Material
       quote,
       source: {
         label: `聊天摘录 / 第${messageNumber}条 / ${message.role === 'user' ? '玩家' : '角色'}`,
-        text: message.text,
+        text: original.text,
         start,
         end: start + quote.length,
         chat: {

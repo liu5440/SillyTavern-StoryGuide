@@ -1,5 +1,6 @@
-// 独立测试数据根：只验证真实宿主读取与预览，不调用模型，不写聊天或素材。
+// 独立测试数据根：验证读取、预览和原文归档/导出，不调用模型或改写聊天。
 import { chromium, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 const browser = await chromium.launch({
   ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
 });
@@ -33,9 +34,22 @@ try {
   if (await page.getByRole('button', { name: '预览当前范围' }).isDisabled())
     throw new Error(await page.locator('.sg-chat-material-status').innerText());
   await page.getByRole('button', { name: '预览当前范围' }).click();
-  await expect(page.locator('.sg-chat-message')).toHaveCount(Math.min(expected, 20));
+  await expect(page.locator('.sg-chat-message')).toHaveCount(Math.min(expected, 50));
   await expect(page.locator('.sg-chat-selection')).toContainText('将只把这些消息');
   await expect(page.getByRole('button', { name: '用当前模型整理' })).toBeEnabled();
+  const exported = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出所选聊天JSON' }).click();
+  const exportedPath = await (await exported).path();
+  if (!exportedPath) throw new Error('没有导出文件');
+  const archive = JSON.parse(await readFile(exportedPath, 'utf8'));
+  if (
+    archive.messages.length !== Math.min(expected, 50) ||
+    archive.status !== 'raw' ||
+    archive.materials.length
+  )
+    throw new Error('原文归档不一致');
+  await page.getByRole('button', { name: '保存聊天归档' }).click();
+  await expect(page.locator('.sg-chat-material-status')).toContainText('已保存');
   await page.setViewportSize({ width: 390, height: 844 });
   const overflow = await page
     .locator('.sg-chat-materials')
@@ -45,7 +59,8 @@ try {
   console.log(
     JSON.stringify({
       realHostRead: true,
-      messageCount: Math.min(expected, 20),
+      messageCount: Math.min(expected, 50),
+      archiveSavedAndExported: true,
       narrowScreen: true,
       modelRequested: false,
       pageErrors: errors,

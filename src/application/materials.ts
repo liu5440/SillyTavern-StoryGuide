@@ -18,6 +18,17 @@ export class MaterialsController {
   watchChat(changed: () => void) {
     return this.app.host.subscribe(changed, changed);
   }
+  async archives() {
+    this.guard();
+    const rows = await this.app.repository.loadChatArchives(this.snapshot.user, this.snapshot.characterKey);
+    this.guard();
+    return rows;
+  }
+  async removeArchive(id: string) {
+    this.guard();
+    await this.app.repository.removeChatArchive(this.snapshot.user, this.snapshot.characterKey, id);
+    this.guard();
+  }
   async load() {
     this.guard();
     const [personal, favorites] = await Promise.all([

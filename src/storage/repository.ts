@@ -1,6 +1,7 @@
 import { parseStory, runSchema, type Story, type RunState } from '../domain/story';
 import { materialSchema, materialIdSchema, type Material } from '../domain/materials';
 import { z } from 'zod';
+import { chatArchiveSchema, type ChatArchive } from '../domain/chat-archive';
 
 /** 每次写入等事务完成再返回，避免配额失败时显示保存成功。 */
 export class Repository {
@@ -68,7 +69,7 @@ export class Repository {
     checkCurrent?: () => void,
     signal?: AbortSignal,
   ): Promise<void> {
-    const valid = z.array(materialSchema).min(1).max(8).parse(cards);
+    const valid = z.array(materialSchema).min(1).max(200).parse(cards);
     if (valid.some((card) => card.origin !== 'dialogue')) throw new Error('内置原创不能覆盖为个人条目');
     if (new Set(valid.map((card) => card.id)).size !== valid.length) throw new Error('本批次素材ID重复');
     const range = IDBKeyRange.bound(['material', user, character], ['material', user, character, []]);
@@ -110,6 +111,52 @@ export class Repository {
     const rows: unknown[] = await this.transact('readonly', (store) => store.getAll(range));
     const schema = z.object({ schemaVersion: z.literal(1), id: materialIdSchema }).strict();
     return rows.map((row) => schema.parse(row).id);
+  }
+  async saveChatArchive(user: string, archive: ChatArchive, check: () => void, signal?: AbortSignal) {
+    const valid = chatArchiveSchema.parse(archive);
+    const range = IDBKeyRange.bound(
+      ['chat-archive', user, valid.characterKey],
+      ['chat-archive', user, valid.characterKey, []],
+    );
+    await this.transact(
+      'readwrite',
+      (store) => {
+        const count = store.count(range);
+        count.onsuccess = () => {
+          try {
+            check();
+          } catch {
+            store.transaction.abort();
+            return;
+          }
+          if (count.result >= 50) {
+            store.transaction.abort();
+            return;
+          }
+          const write = store.add(valid, ['chat-archive', user, valid.characterKey, valid.id]);
+          write.onsuccess = () => {
+            try {
+              check();
+            } catch {
+              store.transaction.abort();
+            }
+          };
+        };
+        return count;
+      },
+      '归档保存失败：每个角色最多50份，请导出并删除旧归档或检查可用空间',
+      signal,
+    );
+  }
+  async loadChatArchives(user: string, character: string): Promise<ChatArchive[]> {
+    const range = IDBKeyRange.bound(['chat-archive', user, character], ['chat-archive', user, character, []]);
+    const rows: unknown[] = await this.transact('readonly', (store) => store.getAll(range));
+    return rows
+      .map((row) => chatArchiveSchema.parse(row))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  async removeChatArchive(user: string, character: string, id: string) {
+    await this.transact('readwrite', (store) => store.delete(['chat-archive', user, character, id]));
   }
   async setMaterialFavorite(user: string, character: string, id: string, favorite: boolean): Promise<void> {
     materialIdSchema.parse(id);

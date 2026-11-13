@@ -9,6 +9,7 @@ import {
 } from '../domain/materials';
 import { el, button, check, field, showModal, download } from './dom';
 import { openChatMaterials } from './chat-materials';
+import { openChatArchives } from './chat-archives';
 
 /** 仅展示与收集用户选区；不读取聊天 DOM、不请求模型、不向聊天写入内容。 */
 export function openMaterials(app: MaterialsController) {
@@ -156,6 +157,7 @@ export function openMaterials(app: MaterialsController) {
     controls.append(search.root, category, onlyFavorites.root, onlyPersonal.root);
     const tools = el('div', 'sg-toolbar');
     tools.append(
+      button('聊天剧情归档', () => openChatArchives(app)),
       button('从当前聊天整理', () =>
         openChatMaterials(app, async () => {
           await reload();
