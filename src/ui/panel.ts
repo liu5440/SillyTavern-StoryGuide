@@ -322,6 +322,11 @@ export class GuidePanel {
         }),
       'sg-primary',
     );
+    const updateGenerateLabel = () => {
+      generate.textContent = mode.value === 'analyze' ? 'AI分析事件与路线' : '生成故事草稿';
+    };
+    mode.addEventListener('change', updateGenerateLabel);
+    updateGenerateLabel();
     const cancel = button('取消生成', () => {
       this.abort?.abort();
       this.message('已请求取消。酒馆模型请求可能继续执行和计费，返回内容不会采用。');
@@ -344,7 +349,11 @@ export class GuidePanel {
         this.dirty = true;
         this.tab = '事件';
         this.query = '';
-        this.message(`已建立${story.nodes.length}条本地资料目录，未调用AI；原文条目已显示，尚未推断路线或事件关系。`);
+        mode.value = 'analyze';
+        updateGenerateLabel();
+        this.message(
+          `已建立${story.nodes.length}条本地资料目录，未调用AI。需要自动梳理先后与分支，可点击“AI分析事件与路线”；将另建草稿供你审阅。`,
+        );
         this.renderContent();
       }),
     );

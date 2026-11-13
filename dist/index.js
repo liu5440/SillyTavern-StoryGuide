@@ -4499,7 +4499,7 @@ function diagnosticReport() {
   return {
     format: "story-guide-diagnostics",
     schemaVersion: 1,
-    version: "0.5.1",
+    version: "0.5.2",
     modelSource: "SillyTavern.getContext().generateRaw / \u9152\u9986\u53C2\u6570\u6784\u9020\u4E0ESSE\u89E3\u6790",
     retention: "\u5F53\u524D\u9875\u9762\u5185\u5B58\u6700\u8FD1100\u6761\uFF0C\u5237\u65B0\u6E05\u7A7A",
     entries: entries.map((entry) => ({ ...entry, fields: entry.fields?.slice() }))
@@ -7102,6 +7102,11 @@ var GuidePanel = class {
       }),
       "sg-primary"
     );
+    const updateGenerateLabel = () => {
+      generate.textContent = mode.value === "analyze" ? "AI\u5206\u6790\u4E8B\u4EF6\u4E0E\u8DEF\u7EBF" : "\u751F\u6210\u6545\u4E8B\u8349\u7A3F";
+    };
+    mode.addEventListener("change", updateGenerateLabel);
+    updateGenerateLabel();
     const cancel = button("\u53D6\u6D88\u751F\u6210", () => {
       this.abort?.abort();
       this.message("\u5DF2\u8BF7\u6C42\u53D6\u6D88\u3002\u9152\u9986\u6A21\u578B\u8BF7\u6C42\u53EF\u80FD\u7EE7\u7EED\u6267\u884C\u548C\u8BA1\u8D39\uFF0C\u8FD4\u56DE\u5185\u5BB9\u4E0D\u4F1A\u91C7\u7528\u3002");
@@ -7125,7 +7130,11 @@ var GuidePanel = class {
         this.dirty = true;
         this.tab = "\u4E8B\u4EF6";
         this.query = "";
-        this.message(`\u5DF2\u5EFA\u7ACB${story.nodes.length}\u6761\u672C\u5730\u8D44\u6599\u76EE\u5F55\uFF0C\u672A\u8C03\u7528AI\uFF1B\u539F\u6587\u6761\u76EE\u5DF2\u663E\u793A\uFF0C\u5C1A\u672A\u63A8\u65AD\u8DEF\u7EBF\u6216\u4E8B\u4EF6\u5173\u7CFB\u3002`);
+        mode.value = "analyze";
+        updateGenerateLabel();
+        this.message(
+          `\u5DF2\u5EFA\u7ACB${story.nodes.length}\u6761\u672C\u5730\u8D44\u6599\u76EE\u5F55\uFF0C\u672A\u8C03\u7528AI\u3002\u9700\u8981\u81EA\u52A8\u68B3\u7406\u5148\u540E\u4E0E\u5206\u652F\uFF0C\u53EF\u70B9\u51FB\u201CAI\u5206\u6790\u4E8B\u4EF6\u4E0E\u8DEF\u7EBF\u201D\uFF1B\u5C06\u53E6\u5EFA\u8349\u7A3F\u4F9B\u4F60\u5BA1\u9605\u3002`
+        );
         this.renderContent();
       })
     );

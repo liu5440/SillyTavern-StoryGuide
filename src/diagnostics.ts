@@ -30,7 +30,7 @@ export function diagnosticReport() {
   return {
     format: 'story-guide-diagnostics',
     schemaVersion: 1,
-    version: '0.5.1',
+    version: '0.5.2',
     modelSource: 'SillyTavern.getContext().generateRaw / 酒馆参数构造与SSE解析',
     retention: '当前页面内存最近100条，刷新清空',
     entries: entries.map((entry) => ({ ...entry, fields: entry.fields?.slice() })),

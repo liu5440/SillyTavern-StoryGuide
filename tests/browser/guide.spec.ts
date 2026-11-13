@@ -17,6 +17,7 @@ test('本地资料目录不调用模型，也能查看原文卡片', async ({ pa
   });
   await page.getByRole('button', { name: '建立本地资料目录（无需AI）' }).click();
   await expect(page.locator('.sg-status')).toContainText('未调用AI');
+  await expect(page.getByRole('button', { name: 'AI分析事件与路线', exact: true })).toBeVisible();
   await expect(page.getByLabel('完整攻略（含剧透）')).not.toBeChecked();
   await expect(page.locator('.sg-output')).toContainText('一位住在旧城的调查员。');
   await page.getByRole('button', { name: '保存草稿版本', exact: true }).click();
@@ -25,6 +26,32 @@ test('本地资料目录不调用模型，也能查看原文卡片', async ({ pa
   await openGuide(page);
   await expect(page.getByLabel('完整攻略（含剧透）')).not.toBeChecked();
   await expect(page.locator('.sg-output')).toContainText('一位住在旧城的调查员。');
+});
+
+test('本地目录后可直接让AI分析路线，不需要手动编排', async ({ page }) => {
+  await page.evaluate(() => {
+    const c = window.SillyTavern?.getContext();
+    if (!c) throw new Error('缺少测试宿主');
+    c.generateRaw = async (options) => {
+      (window as unknown as { analysisPrompt: string }).analysisPrompt = options.prompt;
+      const draft = structuredClone(
+        (
+          window as unknown as {
+            testDraft: { nodes: { provenance: string }[]; edges: { provenance: string }[] };
+          }
+        ).testDraft,
+      );
+      for (const node of draft.nodes) node.provenance = 'inferred';
+      for (const edge of draft.edges) edge.provenance = 'inferred';
+      return JSON.stringify(draft);
+    };
+  });
+  await page.getByRole('button', { name: '建立本地资料目录（无需AI）' }).click();
+  await page.getByRole('button', { name: 'AI分析事件与路线', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '旧城来信' })).toBeVisible();
+  const prompt = await page.evaluate(() => (window as unknown as { analysisPrompt: string }).analysisPrompt);
+  expect(prompt).toContain('只整理资料中的事件与路线');
+  expect(prompt).toContain('一位住在旧城的调查员。');
 });
 
 test('兼容调用消费当前酒馆流式接口，不触发generateRaw', async ({ page }) => {
