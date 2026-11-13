@@ -6,6 +6,7 @@
 - npm run check通过：类型检查、ESLint、21项单元测试、构建；npm run test:browser的8项Chromium回归通过（模拟宿主）。新增默认折叠、键盘操作、菜单入口、重复初始化、延迟菜单、清理测试。
 - 真实SillyTavern 1.19.0独立测试数据根：scripts/smoke-entry-points.mjs验证设置栏展开、设置按钮打开、真实魔杖菜单打开及关闭后焦点恢复，pageErrors为空。未调用模型。
 - 检查发现既有51df1d7源码整理移除无剧透分支label/condition遮蔽，已有回归测试失败；只恢复该保护并保留其余格式，重新构建及测试通过（FR-06）。
+- 发布后，真实酒馆/api/extensions/update返回HTTP 200并更新到2eabecd；重新运行双入口与焦点恢复smoke通过，pageErrors为空。
 - 独立只读审查未发现P1/P2问题。宿主契约来自本机源码与真实测试，其他酒馆版本及第三方主题未作兼容承诺。
 
 ## 0.2.0 场景素材库（FR-09，2026-11-13）
