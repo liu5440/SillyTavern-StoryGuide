@@ -6,6 +6,8 @@
 
 ## 能做什么
 
+查看 [更新日志](CHANGELOG.md) 了解每版新增与修复，查看 [版本说明与更新方法](VERSION.md) 确认当前版本、兼容范围和升级步骤。
+
 - 选择角色资料、内嵌与关联世界书，解析原有故事。
 - 没有世界书时，输入意向创作章节、事件、分支与结局。
 - 查看中文事件列表、地点索引和可缩放、可拖动的路线图。
@@ -90,6 +92,8 @@ npm run test:browser
 
 ## 项目文档
 
+- [更新日志](CHANGELOG.md)
+- [版本说明与更新方法](VERSION.md)
 - [需求与验收](docs/requirements.md)
 - [项目与代码规范](docs/project-conventions.md)
 - [宿主契约](docs/host-contract.md)
