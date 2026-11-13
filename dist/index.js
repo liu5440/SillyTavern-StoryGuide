@@ -4499,7 +4499,7 @@ function diagnosticReport() {
   return {
     format: "story-guide-diagnostics",
     schemaVersion: 1,
-    version: "0.5.3",
+    version: "0.6.0",
     modelSource: "SillyTavern.getContext().generateRaw / \u9152\u9986\u53C2\u6570\u6784\u9020\u4E0ESSE\u89E3\u6790",
     retention: "\u5F53\u524D\u9875\u9762\u5185\u5B58\u6700\u8FD1100\u6761\uFF0C\u5237\u65B0\u6E05\u7A7A",
     entries: entries.map((entry) => ({ ...entry, fields: entry.fields?.slice() }))
@@ -5208,6 +5208,7 @@ async function requestModel(host, prompt, signal, stage, progress, timeoutMs = 1
 var PROMPT_VERSION = "1.1";
 var draftContract = `\u8F93\u51FA\u4E00\u4E2A JSON \u5BF9\u8C61\uFF0C\u5B57\u6BB5\u4EC5\u4E3A title, summary, nodes, edges\u3002
 nodes \u4E3A\u6570\u7EC4\uFF0C\u6BCF\u9879\u4E25\u683C\u5305\u542B\uFF1Aid(\u552F\u4E00\u77ED\u5B57\u7B26\u4E32), type(start/event/choice/ending), title, summary, location(\u672A\u77E5\u7528\u7A7A\u5B57\u7B26\u4E32), characters(\u5B57\u7B26\u4E32\u6570\u7EC4), time(\u672A\u77E5\u5199\u672A\u77E5), chapter, provenance(explicit/inferred/original), refs([{sourceId,quote}]), spoiler(\u5E03\u5C14\uFF0C\u672A\u53D1\u751F\u4E8B\u4EF6\u548C\u79D8\u5BC6\u4E3Atrue), locked(false)\u3002
+characters \u586B\u5199\u8BE5\u4E8B\u4EF6\u6D89\u53CA\u7684\u4EBA\u7269\u59D3\u540D\uFF0C\u591A\u4EBA\u7269\u4E8B\u4EF6\u9010\u4E00\u5217\u51FA\uFF1B\u4E0D\u8981\u586B\u5199\u201C\u89D2\u8272\u201D\u201C\u4EBA\u7269\u8BBE\u5B9A\u201D\u7B49\u5206\u7C7B\u8BCD\uFF0C\u65E0\u6CD5\u8BC6\u522B\u4EBA\u540D\u65F6\u7528\u7A7A\u6570\u7EC4\uFF0C\u4E0D\u51ED\u6761\u76EE\u6807\u9898\u731C\u6D4B\u3002
 edges \u6BCF\u9879\u4E25\u683C\u5305\u542B id, from, to, label(\u9009\u62E9\u6216\u8854\u63A5\u6587\u5B57), condition(\u81EA\u7136\u8BED\u8A00\u6761\u4EF6\uFF0C\u672A\u77E5\u5199\u9700\u73A9\u5BB6\u5224\u65AD), provenance, refs\u3002
 \u8282\u70B9\u548C\u8FDE\u7EBF ID \u5404\u81EA\u552F\u4E00\uFF0Cfrom/to \u5FC5\u987B\u6307\u5411\u5DF2\u6709\u8282\u70B9\uFF0C\u7981\u6B62\u73AF\u8DEF\uFF1B\u89E3\u6790\u6A21\u5F0F\u4E2D\u6CA1\u6709\u539F\u6587\u652F\u6301\u7684\u8DEF\u7EBF\u65F6 edges \u7528\u7A7A\u6570\u7EC4\uFF0C\u4E0D\u4E3A\u6EE1\u8DB3\u56FE\u7ED3\u6784\u7F16\u9020\u7ED3\u5C40\uFF1B\u521B\u4F5C\u6A21\u5F0F\u6309\u4EFB\u52A1\u8981\u6C42\u521B\u5EFA\u539F\u521B\u5206\u652F\u3002
 \u6765\u6E90 explicit \u5FC5\u987B refs \u5F15\u7528\u63D0\u4F9B\u7684 sourceId \u4E0E\u539F\u6587\u9010\u5B57\u6458\u5F55\uFF1B\u6CA1\u6709\u4F9D\u636E\u7528 inferred\uFF0C\u4E0D\u8BB8\u4F2A\u9020\u5F15\u7528\u3002\u539F\u521B\u7528 original\u3002\u8FB9\u7684\u6761\u4EF6\u548C\u5148\u540E\u987A\u5E8F\u6CA1\u6709\u539F\u6587\u4F9D\u636E\u65F6\u540C\u6837\u6807 inferred\u3002
@@ -6836,6 +6837,63 @@ ${source.text.slice(0, 19e3)}` : source.text,
   return story;
 }
 
+// src/domain/character-groups.ts
+function cleanName(value) {
+  return value.replace(/[*#"'“”]/gu, "").split(/[（(\/、]/u)[0]?.trim() ?? "";
+}
+function validName(value) {
+  return value.length >= 2 && value.length <= 30 && !/[<>={}\[\]\r\n]/u.test(value);
+}
+function sourceNames(source) {
+  const names = /* @__PURE__ */ new Set();
+  const pattern = /(?:^|[\n{,，])\s*(?:[-*#]\s*)?["'“”*]*(?:姓名|角色姓名|角色名|人物姓名|人物名)["'“”*]*\s*[:：]\s*["'“”]*([^\n\r"'“”<>，,;；。{}\[\]|]+)/gu;
+  for (const match of source.text.matchAll(pattern)) {
+    const name = cleanName(match[1] ?? "");
+    if (validName(name)) names.add(name);
+  }
+  if (!names.size && !source.id.startsWith("card:")) {
+    const title = cleanName(source.label.split("/").at(-1) ?? "");
+    const features = ["\u6027\u683C", "\u5916\u8C8C", "\u8EAB\u4EFD", "\u5E74\u9F84", "\u79CD\u65CF", "\u4EBA\u7269\u7B80\u4ECB", "\u89D2\u8272\u4ECB\u7ECD"].filter(
+      (word) => source.text.includes(word)
+    );
+    if (validName(title) && title.length <= 16 && features.length >= 2 && !/规则|变量|索引|世界观|说明|声明|格式|初始化|事件|场景|人物描述|开场白|背景|总览|性格|外貌|年龄|身份/u.test(
+      title
+    ))
+      names.add(title);
+  }
+  return [...names];
+}
+function characterGroups(story) {
+  const roster = new Set(story.sources.flatMap(sourceNames));
+  for (const node of story.nodes)
+    for (const name of node.characters) if (name.trim()) roster.add(name.trim());
+  const map = /* @__PURE__ */ new Map();
+  const sourcesById = new Map(story.sources.map((source) => [source.id, source]));
+  const unassigned = [];
+  for (const node of story.nodes) {
+    const named = [...new Set(node.characters.map((name) => name.trim()).filter(Boolean))];
+    const localExcerptMarker = "\u3010\u539F\u6587\u6458\u5F55\uFF0C\u5B8C\u6574\u5185\u5BB9\u89C1\u6765\u6E90\u3011\n";
+    const fullLocalTexts = node.refs.flatMap((ref) => {
+      const source = sourcesById.get(ref.sourceId);
+      if (!source) return [];
+      return node.summary === source.text || node.summary.startsWith(localExcerptMarker) && source.text.startsWith(node.summary.slice(localExcerptMarker.length)) ? [source.text] : [];
+    });
+    const text2 = [node.title, node.summary, ...fullLocalTexts].join("\n");
+    const names = named.length ? named : [...roster].filter((name) => text2.includes(name));
+    if (!names.length) unassigned.push(node.id);
+    for (const name of names) {
+      const nodes = map.get(name) ?? [];
+      nodes.push(node.id);
+      map.set(name, nodes);
+    }
+  }
+  return [
+    { key: "all", label: "\u5168\u90E8\u8D44\u6599", nodeIds: story.nodes.map((node) => node.id) },
+    ...[...map].sort(([a], [b]) => a.localeCompare(b, "zh-CN")).map(([name, nodeIds]) => ({ key: `character:${name}`, label: name, nodeIds })),
+    { key: "unassigned", label: "\u516C\u5171\uFF0F\u672A\u5206\u7C7B", nodeIds: unassigned }
+  ];
+}
+
 // src/ui/panel.ts
 var provenance = { explicit: "\u539F\u6587\u660E\u786E", inferred: "\u6A21\u578B\u63A8\u65AD", original: "\u539F\u521B\u6545\u4E8B", user: "\u7528\u6237\u8BBE\u5B9A" };
 var kinds = { start: "\u5F00\u573A", event: "\u4E8B\u4EF6", choice: "\u9009\u62E9", ending: "\u7ED3\u5C40" };
@@ -6878,7 +6936,9 @@ var GuidePanel = class {
         } finally {
           transport.value = this.app.host.getTransport();
         }
-        this.message("\u8C03\u7528\u65B9\u5F0F\u5DF2\u5207\u6362\uFF1B\u804A\u5929\u7D20\u6750\u6574\u7406\u4E5F\u4F7F\u7528\u6B64\u8BBE\u7F6E\u3002\u5355\u6B21\u8BF7\u6C426000 token\u8F93\u51FA\u9884\u7B97\uFF0C\u53EF\u80FD\u589E\u52A0\u7528\u91CF\uFF1B\u4E0D\u6539\u5168\u5C40\u56DE\u590D\u957F\u5EA6\uFF0C\u4E0D\u81EA\u52A8\u91CD\u8BD5\u3002");
+        this.message(
+          "\u8C03\u7528\u65B9\u5F0F\u5DF2\u5207\u6362\uFF1B\u804A\u5929\u7D20\u6750\u6574\u7406\u4E5F\u4F7F\u7528\u6B64\u8BBE\u7F6E\u3002\u5355\u6B21\u8BF7\u6C426000 token\u8F93\u51FA\u9884\u7B97\uFF0C\u53EF\u80FD\u589E\u52A0\u7528\u91CF\uFF1B\u4E0D\u6539\u5168\u5C40\u56DE\u590D\u957F\u5EA6\uFF0C\u4E0D\u81EA\u52A8\u91CD\u8BD5\u3002"
+        );
       });
     });
     header.append(transport);
@@ -6931,7 +6991,9 @@ var GuidePanel = class {
   stories = [];
   run;
   undo = [];
-  spoilers = false;
+  spoilers = true;
+  characterFilter = "all";
+  grouping;
   dirty = false;
   tab = "\u6982\u89C8";
   query = "";
@@ -7008,7 +7070,8 @@ var GuidePanel = class {
     this.selectedSources = new Set(snapshot.sources.filter((s) => !s.disabled).map((s) => s.id));
     this.dirty = false;
     this.undo = [];
-    this.spoilers = false;
+    this.characterFilter = "all";
+    this.query = "";
     this.run = run;
     this.title.textContent = `${snapshot.characterName}\u7684\u5267\u60C5\u6307\u5357`;
     await this.renderSidebar();
@@ -7110,6 +7173,7 @@ var GuidePanel = class {
           this.story = story;
           this.run = run;
           this.dirty = true;
+          this.characterFilter = "all";
           this.message("\u8349\u7A3F\u5DF2\u751F\u6210\uFF0C\u5C1A\u672A\u4FDD\u5B58\u6216\u91C7\u7528\u3002\u6253\u5F00\u5B8C\u6574\u653B\u7565\u53EF\u7F16\u8F91\u4E8B\u4EF6\u4E0E\u5206\u652F\u3002");
           this.renderContent();
         } catch (error) {
@@ -7161,6 +7225,7 @@ var GuidePanel = class {
         this.dirty = true;
         this.tab = "\u4E8B\u4EF6";
         this.query = "";
+        this.characterFilter = "all";
         mode.value = "analyze";
         updateGenerateLabel();
         this.message(
@@ -7229,6 +7294,11 @@ var GuidePanel = class {
     );
     this.sidebar.append(footer);
   }
+  groupsFor(story) {
+    if (!this.grouping || this.grouping.story !== story)
+      this.grouping = { story, groups: characterGroups(story) };
+    return this.grouping.groups;
+  }
   renderContent() {
     this.content.replaceChildren();
     const snapshot = this.snapshot;
@@ -7270,17 +7340,13 @@ var GuidePanel = class {
           this.run = run;
           this.dirty = false;
           this.undo = [];
+          this.characterFilter = "all";
+          this.query = "";
           this.renderContent();
         })
       );
       actions.append(select);
     }
-    actions.append(
-      check("\u5B8C\u6574\u653B\u7565\uFF08\u542B\u5267\u900F\uFF09", this.spoilers, (yes) => {
-        this.spoilers = yes;
-        this.renderContent();
-      }).root
-    );
     this.content.append(actions);
     const story = this.story;
     if (!story) {
@@ -7293,7 +7359,7 @@ var GuidePanel = class {
           "",
           "\u9009\u62E9\u5DE6\u4FA7\u8D44\u6599\uFF0C\u89E3\u6790\u89D2\u8272\u5DF2\u6709\u7684\u7ECF\u5386\u4E0E\u8DEF\u7EBF\u3002\u6CA1\u6709\u4E16\u754C\u4E66\uFF1F\u4E5F\u53EF\u4EE5\u4ECE\u4EBA\u7269\u51FA\u53D1\uFF0C\u521B\u4F5C\u5171\u540C\u7EBF\u3001\u5206\u652F\u548C\u7ED3\u5C40\u3002"
         ),
-        el("p", "sg-muted", "\u751F\u6210\u540E\u5148\u5BA1\u9605\u8349\u7A3F\uFF1B\u65E5\u5E38\u6E38\u73A9\u9ED8\u8BA4\u9690\u85CF\u672A\u6765\u60C5\u8282\u3002")
+        el("p", "sg-muted", "\u9ED8\u8BA4\u5C55\u793A\u5B8C\u6574\u653B\u7565\uFF1B\u751F\u6210\u540E\u5148\u5BA1\u9605\u8349\u7A3F\uFF0C\u518D\u91C7\u7528\u4E3A\u6E38\u73A9\u4F9D\u636E\u3002")
       );
       this.content.append(empty);
       return;
@@ -7352,6 +7418,37 @@ var GuidePanel = class {
         )
       );
     this.content.append(nav);
+    const groups = this.groupsFor(story);
+    if (!groups.some((group) => group.key === this.characterFilter)) this.characterFilter = "all";
+    const filters = el("section", "sg-character-groups");
+    filters.setAttribute("aria-label", "\u6309\u5B50\u89D2\u8272\u67E5\u770B");
+    filters.append(el("h3", "", "\u6309\u5B50\u89D2\u8272\u67E5\u770B"));
+    const chips = el("div", "sg-character-chips");
+    for (const group of groups) {
+      const chip = button(
+        `${group.label}\uFF08${group.nodeIds.length}\uFF09`,
+        () => {
+          this.characterFilter = group.key;
+          this.renderContent();
+          for (const next of this.content.querySelectorAll("[data-character-group]")) {
+            if (next.dataset.characterGroup === group.key) next.focus();
+          }
+        },
+        group.key === this.characterFilter ? "sg-active" : ""
+      );
+      chip.dataset.characterGroup = group.key;
+      chip.setAttribute("aria-pressed", String(group.key === this.characterFilter));
+      chips.append(chip);
+    }
+    filters.append(
+      chips,
+      el(
+        "small",
+        "sg-muted",
+        "\u4F18\u5148\u6309\u5DF2\u6807\u6CE8\u4EBA\u7269\u5206\u7EC4\uFF1B\u65E0\u4EBA\u7269\u5B57\u6BB5\u65F6\u6309\u59D3\u540D\u6216\u4EBA\u7269\u6863\u6848\u53CA\u539F\u6587\u63D0\u53CA\u7B5B\u9009\u3002\u672A\u660E\u786E\u5F52\u5C5E\u7684\u8D44\u6599\u4FDD\u7559\u5728\u516C\u5171\uFF0F\u672A\u5206\u7C7B\uFF0C\u4E0D\u4EE3\u8868\u8DEF\u7EBF\u5224\u5B9A\u3002"
+      )
+    );
+    this.content.append(filters);
     const search = field("\u641C\u7D22\u53EF\u89C1\u4E8B\u4EF6\u3001\u4EBA\u7269\u3001\u5730\u70B9", this.query);
     search.input.addEventListener("input", () => {
       this.query = search.input.value;
@@ -7366,8 +7463,10 @@ var GuidePanel = class {
     this.output.replaceChildren();
     if (!this.story) return;
     const view = visibleStory(this.story, this.run, this.spoilers);
+    const selectedGroup = this.groupsFor(this.story).find((group) => group.key === this.characterFilter);
+    const nodeIds = new Set(selectedGroup?.nodeIds ?? view.nodes.map((node) => node.id));
     const nodes = view.nodes.filter(
-      (n) => `${n.title} ${n.summary} ${n.location} ${n.characters.join(" ")}`.includes(this.query)
+      (n) => nodeIds.has(n.id) && `${n.title} ${n.summary} ${n.location} ${n.characters.join(" ")}`.includes(this.query)
     );
     if (this.tab === "\u6982\u89C8") {
       this.output.append(el("p", "sg-synopsis", view.summary));
@@ -7382,7 +7481,8 @@ var GuidePanel = class {
           this.output.append(
             el("p", "sg-next", `${edge.label || "\u7EE7\u7EED\u63A2\u7D22"} \xB7 \u6761\u4EF6\uFF1A${edge.condition || "\u9700\u73A9\u5BB6\u5224\u65AD"}`)
           );
-        this.output.append(
+        const progressActions = el("div", "sg-toolbar sg-progress-actions");
+        progressActions.append(
           button("\u67E5\u770B\u4E92\u52A8\u5EFA\u8BAE", () => this.suggestions(view)),
           button("\u672C\u5C40\u9009\u62E9\u4E0E\u53D8\u91CF", () => this.runEditor()),
           button(
@@ -7398,6 +7498,7 @@ var GuidePanel = class {
             })
           )
         );
+        this.output.append(progressActions);
       }
       this.output.append(el("h3", "", "\u53EF\u63A2\u7D22\u4E8B\u4EF6"));
     }
@@ -7423,11 +7524,14 @@ var GuidePanel = class {
           } : void 0
         )
       );
-      if (this.spoilers)
-        this.output.append(
+      if (this.spoilers) {
+        const graphActions = el("div", "sg-toolbar");
+        graphActions.append(
           button("\u6DFB\u52A0\u4E8B\u4EF6", () => this.nodeDetail()),
           button("\u6DFB\u52A0\u8FDE\u7EBF", () => this.edgeDetail())
         );
+        this.output.append(graphActions);
+      }
       return;
     }
     if (this.tab === "\u5730\u70B9") {
@@ -7441,7 +7545,9 @@ var GuidePanel = class {
       }
     } else for (const node of nodes) this.output.append(this.nodeRow(node));
     if (!nodes.length)
-      this.output.append(el("p", "sg-empty", "\u6CA1\u6709\u5339\u914D\u7684\u53EF\u89C1\u4E8B\u4EF6\u3002\u672A\u6765\u60C5\u8282\u53EF\u5728\u5B8C\u6574\u653B\u7565\u4E2D\u67E5\u770B\u3002"));
+      this.output.append(
+        el("p", "sg-empty", "\u5F53\u524D\u4EBA\u7269\u5206\u7C7B\u6216\u641C\u7D22\u4E0B\u6CA1\u6709\u5339\u914D\u8D44\u6599\uFF0C\u53EF\u5207\u6362\u201C\u5168\u90E8\u8D44\u6599\u201D\u6216\u6E05\u7A7A\u641C\u7D22\u3002")
+      );
     if (this.spoilers) this.output.append(button("\u6DFB\u52A0\u4E8B\u4EF6", () => this.nodeDetail()));
   }
   nodeRow(node) {

@@ -59,6 +59,13 @@ test('多人世界书默认完整显示，可点击人物筛选，概览按钮�
       current.y > previous.y ? current.y - previous.bottom : current.x - previous.right,
     ).toBeGreaterThanOrEqual(8);
   }
+  await page.screenshot({ path: 'test-results/grouped-guide-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const size = await page
+    .locator('.sg-panel')
+    .evaluate((node) => ({ width: node.clientWidth, scroll: node.scrollWidth }));
+  expect(size.scroll).toBeLessThanOrEqual(size.width + 2);
+  await page.screenshot({ path: 'test-results/grouped-guide-mobile.png', fullPage: true });
 });
 
 test('本地资料目录不调用模型，也能查看原文卡片', async ({ page }) => {

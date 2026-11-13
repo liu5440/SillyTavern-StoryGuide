@@ -1,6 +1,7 @@
 export const PROMPT_VERSION = '1.1';
 export const draftContract = `输出一个 JSON 对象，字段仅为 title, summary, nodes, edges。
 nodes 为数组，每项严格包含：id(唯一短字符串), type(start/event/choice/ending), title, summary, location(未知用空字符串), characters(字符串数组), time(未知写未知), chapter, provenance(explicit/inferred/original), refs([{sourceId,quote}]), spoiler(布尔，未发生事件和秘密为true), locked(false)。
+characters 填写该事件涉及的人物姓名，多人物事件逐一列出；不要填写“角色”“人物设定”等分类词，无法识别人名时用空数组，不凭条目标题猜测。
 edges 每项严格包含 id, from, to, label(选择或衔接文字), condition(自然语言条件，未知写需玩家判断), provenance, refs。
 节点和连线 ID 各自唯一，from/to 必须指向已有节点，禁止环路；解析模式中没有原文支持的路线时 edges 用空数组，不为满足图结构编造结局；创作模式按任务要求创建原创分支。
 来源 explicit 必须 refs 引用提供的 sourceId 与原文逐字摘录；没有依据用 inferred，不许伪造引用。原创用 original。边的条件和先后顺序没有原文依据时同样标 inferred。
