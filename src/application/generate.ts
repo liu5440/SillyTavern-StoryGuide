@@ -1,4 +1,5 @@
 import { requestModel } from './model-request';
+import { recordDiagnostic } from '../diagnostics';
 import { z } from 'zod';
 import {
   nodeSchema,
@@ -14,6 +15,51 @@ import { storyPrompt, repairPrompt, draftContract } from '../ai/prompts';
 const draftSchema = z
   .object({ title: z.string(), summary: z.string(), nodes: z.array(nodeSchema), edges: z.array(edgeSchema) })
   .strict();
+/** 校验日志只保留已知结构字段及错误码，禁止记录模型生成的字段名和内容。 */
+function logValidation(error: unknown, repair: boolean) {
+  const keys = new Set([
+    'title',
+    'summary',
+    'nodes',
+    'edges',
+    'id',
+    'type',
+    'location',
+    'characters',
+    'time',
+    'chapter',
+    'provenance',
+    'refs',
+    'sourceId',
+    'quote',
+    'spoiler',
+    'locked',
+    'from',
+    'to',
+    'label',
+    'condition',
+  ]);
+  recordDiagnostic({
+    requestId: crypto.randomUUID(),
+    event: 'validation',
+    stage: repair ? '修复' : '生成',
+    reason:
+      error instanceof z.ZodError
+        ? '结构校验失败'
+        : error instanceof SyntaxError
+          ? 'JSON解析失败'
+          : '故事图或来源校验失败',
+    fields:
+      error instanceof z.ZodError
+        ? error.issues
+            .slice(0, 10)
+            .map(
+              (issue) =>
+                `${issue.path.map((part) => (typeof part === 'number' ? part : keys.has(part) ? part : '[未知字段]')).join('.')}: ${issue.code}`,
+            )
+        : [],
+  });
+}
 export interface GenerateInput {
   snapshot: ContextSnapshot;
   mode: 'analyze' | 'create';
@@ -119,6 +165,7 @@ export async function generateStory(
     try {
       return decodeDraft(raw, context, outputMode);
     } catch (error) {
+      logValidation(error, false);
       const reason =
         error instanceof z.ZodError
           ? error.issues
@@ -140,7 +187,8 @@ export async function generateStory(
       guard();
       try {
         return decodeDraft(fixed, context, outputMode);
-      } catch {
+      } catch (error) {
+        logValidation(error, true);
         throw new Error(
           `格式修复后仍未通过校验，已停止；首次原因：${reason}。请减少资料范围或检查模型输出能力后重试。`,
         );

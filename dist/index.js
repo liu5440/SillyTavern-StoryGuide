@@ -4480,6 +4480,47 @@ function decodeChatMaterials(raw, capture, originals = capture.messages) {
   });
 }
 
+// src/diagnostics.ts
+var requestIds = /* @__PURE__ */ new WeakMap();
+function diagnosticId(signal) {
+  let id2 = requestIds.get(signal);
+  if (!id2) {
+    id2 = crypto.randomUUID();
+    requestIds.set(signal, id2);
+  }
+  return id2;
+}
+var entries = [];
+function recordDiagnostic(entry) {
+  entries.push({ ...entry, fields: entry.fields?.slice(0, 10), time: (/* @__PURE__ */ new Date()).toISOString() });
+  if (entries.length > 100) entries.splice(0, entries.length - 100);
+}
+function diagnosticReport() {
+  return {
+    format: "story-guide-diagnostics",
+    schemaVersion: 1,
+    version: "0.4.2",
+    modelSource: "SillyTavern.getContext().generateRaw",
+    retention: "\u5F53\u524D\u9875\u9762\u5185\u5B58\u6700\u8FD1100\u6761\uFF0C\u5237\u65B0\u6E05\u7A7A",
+    entries: entries.map((entry) => ({ ...entry, fields: entry.fields?.slice() }))
+  };
+}
+function clearDiagnostics() {
+  entries.length = 0;
+}
+function classifyFailure(error) {
+  const message = error instanceof Error ? error.message : "";
+  const status = message.match(/\b(400|401|403|404|408|413|429|500|502|503|504)\b/)?.[1];
+  if (status) return `HTTP ${status}`;
+  if (/超时|timeout/i.test(message)) return "\u8BF7\u6C42\u8D85\u65F6";
+  if (/取消|abort/i.test(message)) return "\u5DF2\u53D6\u6D88";
+  if (/上一次模型请求仍在结束/.test(message)) return "\u524D\u6B21\u5BBF\u4E3B\u8BF7\u6C42\u5C1A\u672A\u7ED3\u675F\uFF0C\u62D2\u7EDD\u91CD\u590D\u8C03\u7528";
+  if (/请先在酒馆中连接模型/.test(message)) return "\u9152\u9986\u6A21\u578B\u5C1A\u672A\u8FDE\u63A5";
+  if (/不支持 generateRaw/.test(message)) return "\u5BBF\u4E3B\u7F3A\u5C11generateRaw\u80FD\u529B";
+  if (/network|fetch|网络/i.test(message)) return "\u7F51\u7EDC\u8BF7\u6C42\u5931\u8D25";
+  return "\u5BBF\u4E3B\u6A21\u578B\u8C03\u7528\u5931\u8D25\uFF08\u672A\u4FDD\u5B58\u5F02\u5E38\u539F\u6587\uFF09";
+}
+
 // src/host/tavern.ts
 var characterSchema = z.object({
   avatar: z.string().min(1),
@@ -4623,6 +4664,35 @@ var TavernHost = class {
     }
   }
   async generate(prompt, signal) {
+    const requestId = diagnosticId(signal);
+    const started = Date.now();
+    const api = this.context.mainApi;
+    recordDiagnostic({
+      requestId,
+      event: "request",
+      inputChars: prompt.length,
+      api: api && ["openai", "kobold", "koboldhorde", "textgenerationwebui", "novel"].includes(api) ? api : "other"
+    });
+    try {
+      const raw = await this.generateInternal(prompt, signal);
+      recordDiagnostic({
+        requestId,
+        event: "response",
+        elapsedMs: Date.now() - started,
+        outputChars: raw.length
+      });
+      return raw;
+    } catch (error) {
+      recordDiagnostic({
+        requestId,
+        event: signal.aborted ? "cancel" : "failure",
+        elapsedMs: Date.now() - started,
+        reason: classifyFailure(error)
+      });
+      throw error;
+    }
+  }
+  async generateInternal(prompt, signal) {
     if (signal.aborted) throw new Error("\u5DF2\u53D6\u6D88\u751F\u6210");
     const c = this.context;
     if (!c.generateRaw) throw new Error("\u5F53\u524D\u9152\u9986\u4E0D\u652F\u6301 generateRaw\uFF0C\u8BF7\u5347\u7EA7");
@@ -4907,6 +4977,12 @@ var Repository = class {
 async function requestModel(host, prompt, signal, stage, progress, timeoutMs = 18e4, intervalMs = 1e3) {
   const controller = new AbortController();
   const started = Date.now();
+  const requestId = diagnosticId(controller.signal);
+  recordDiagnostic({
+    requestId,
+    event: "request",
+    stage: stage.includes("\u4FEE\u590D") ? "\u4FEE\u590D" : stage.includes("\u89E3\u6790") ? "\u89E3\u6790" : stage.includes("\u5408\u5E76") ? "\u5408\u5E76" : "\u751F\u6210"
+  });
   let timer;
   let heartbeat;
   let abort = () => {
@@ -4940,6 +5016,14 @@ async function requestModel(host, prompt, signal, stage, progress, timeoutMs = 1
         return host.generate(prompt, controller.signal);
       }).then(resolve, reject);
     });
+  } catch (error) {
+    recordDiagnostic({
+      requestId,
+      event: "failure",
+      elapsedMs: Date.now() - started,
+      reason: classifyFailure(error)
+    });
+    throw error;
   } finally {
     clearTimeout(timer);
     clearInterval(heartbeat);
@@ -4970,6 +5054,39 @@ function repairPrompt(raw, error) {
 
 // src/application/generate.ts
 var draftSchema = z.object({ title: z.string(), summary: z.string(), nodes: z.array(nodeSchema), edges: z.array(edgeSchema) }).strict();
+function logValidation(error, repair) {
+  const keys = /* @__PURE__ */ new Set([
+    "title",
+    "summary",
+    "nodes",
+    "edges",
+    "id",
+    "type",
+    "location",
+    "characters",
+    "time",
+    "chapter",
+    "provenance",
+    "refs",
+    "sourceId",
+    "quote",
+    "spoiler",
+    "locked",
+    "from",
+    "to",
+    "label",
+    "condition"
+  ]);
+  recordDiagnostic({
+    requestId: crypto.randomUUID(),
+    event: "validation",
+    stage: repair ? "\u4FEE\u590D" : "\u751F\u6210",
+    reason: error instanceof z.ZodError ? "\u7ED3\u6784\u6821\u9A8C\u5931\u8D25" : error instanceof SyntaxError ? "JSON\u89E3\u6790\u5931\u8D25" : "\u6545\u4E8B\u56FE\u6216\u6765\u6E90\u6821\u9A8C\u5931\u8D25",
+    fields: error instanceof z.ZodError ? error.issues.slice(0, 10).map(
+      (issue) => `${issue.path.map((part) => typeof part === "number" ? part : keys.has(part) ? part : "[\u672A\u77E5\u5B57\u6BB5]").join(".")}: ${issue.code}`
+    ) : []
+  });
+}
 var GenerationError = class extends Error {
   constructor(message, partials) {
     super(message);
@@ -5053,6 +5170,7 @@ async function generateStory(host, input, signal, progress) {
     try {
       return decodeDraft(raw, context, outputMode);
     } catch (error) {
+      logValidation(error, false);
       const reason = error instanceof z.ZodError ? error.issues.slice(0, 3).map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("\uFF1B") : error instanceof SyntaxError ? "\u6A21\u578B\u8FD4\u56DE\u7684\u5185\u5BB9\u4E0D\u662F\u6709\u6548 JSON" : error instanceof Error ? error.message.slice(0, 500) : "\u683C\u5F0F\u9519\u8BEF";
       const fixed = await requestModel(
         host,
@@ -5064,7 +5182,8 @@ async function generateStory(host, input, signal, progress) {
       guard();
       try {
         return decodeDraft(fixed, context, outputMode);
-      } catch {
+      } catch (error2) {
+        logValidation(error2, true);
         throw new Error(
           `\u683C\u5F0F\u4FEE\u590D\u540E\u4ECD\u672A\u901A\u8FC7\u6821\u9A8C\uFF0C\u5DF2\u505C\u6B62\uFF1B\u9996\u6B21\u539F\u56E0\uFF1A${reason}\u3002\u8BF7\u51CF\u5C11\u8D44\u6599\u8303\u56F4\u6216\u68C0\u67E5\u6A21\u578B\u8F93\u51FA\u80FD\u529B\u540E\u91CD\u8BD5\u3002`
         );
@@ -6417,6 +6536,46 @@ function openExtractor(app, saved) {
   });
 }
 
+// src/ui/diagnostics.ts
+function openDiagnostics() {
+  showModal("\u6392\u67E5\u65E5\u5FD7", (body) => {
+    body.append(
+      el(
+        "p",
+        "",
+        "\u7EE7\u7EED\u4F7F\u7528\u9152\u9986\u5F53\u524DAI\u8FDE\u63A5\u3002\u4EC5\u4FDD\u5B58\u672C\u9875\u9762\u6700\u8FD1100\u6761\uFF1B\u5237\u65B0\u540E\u6E05\u7A7A\uFF0C\u8BF7\u5148\u5BFC\u51FA\u3002\u65E5\u5FD7\u4E0D\u542B\u804A\u5929\u3001\u5B8C\u6574\u6A21\u578B\u56DE\u590D\u6216\u5BC6\u94A5\u3002"
+      )
+    );
+    const text2 = el("pre");
+    text2.style.whiteSpace = "pre-wrap";
+    text2.style.overflowWrap = "anywhere";
+    const status = el("p");
+    const refresh = () => {
+      text2.textContent = JSON.stringify(diagnosticReport(), null, 2);
+    };
+    body.append(
+      button("\u5237\u65B0\u65E5\u5FD7", refresh),
+      button("\u590D\u5236\u65E5\u5FD7", async () => {
+        try {
+          await navigator.clipboard.writeText(JSON.stringify(diagnosticReport(), null, 2));
+          status.textContent = "\u65E5\u5FD7\u5DF2\u590D\u5236";
+        } catch {
+          status.textContent = "\u590D\u5236\u5931\u8D25\uFF0C\u8BF7\u4F7F\u7528\u5BFC\u51FA\u65E5\u5FD7";
+        }
+      }),
+      button("\u5BFC\u51FA\u65E5\u5FD7", () => download("\u5267\u60C5\u6307\u5357-\u6392\u67E5\u65E5\u5FD7.json", diagnosticReport())),
+      button("\u6E05\u7A7A\u65E5\u5FD7", () => {
+        clearDiagnostics();
+        refresh();
+        status.textContent = "\u65E5\u5FD7\u5DF2\u6E05\u7A7A";
+      }),
+      status,
+      text2
+    );
+    refresh();
+  });
+}
+
 // src/ui/panel.ts
 var provenance = { explicit: "\u539F\u6587\u660E\u786E", inferred: "\u6A21\u578B\u63A8\u65AD", original: "\u539F\u521B\u6545\u4E8B", user: "\u7528\u6237\u8BBE\u5B9A" };
 var kinds = { start: "\u5F00\u573A", event: "\u4E8B\u4EF6", choice: "\u9009\u62E9", ending: "\u7ED3\u5C40" };
@@ -6428,6 +6587,7 @@ var GuidePanel = class {
     heading.append(el("span", "sg-brand", "STORY GUIDE / \u5267\u60C5\u624B\u518C"), this.title);
     header.append(
       heading,
+      button("\u6392\u67E5\u65E5\u5FD7", openDiagnostics),
       button(
         "\u573A\u666F\u7D20\u6750\u5E93",
         () => this.safe(() => {

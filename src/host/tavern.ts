@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { fingerprint, type Source } from '../domain/story';
 import { selectChatMessages } from '../domain/chat-materials';
+import { diagnosticId, recordDiagnostic, classifyFailure } from '../diagnostics';
 
 type EventSource = {
   on: (name: string, callback: () => void) => void;
@@ -207,6 +208,38 @@ export class TavernHost implements Host {
     }
   }
   async generate(prompt: string, signal: AbortSignal): Promise<string> {
+    const requestId = diagnosticId(signal);
+    const started = Date.now();
+    const api = this.context.mainApi;
+    recordDiagnostic({
+      requestId,
+      event: 'request',
+      inputChars: prompt.length,
+      api:
+        api && ['openai', 'kobold', 'koboldhorde', 'textgenerationwebui', 'novel'].includes(api)
+          ? api
+          : 'other',
+    });
+    try {
+      const raw = await this.generateInternal(prompt, signal);
+      recordDiagnostic({
+        requestId,
+        event: 'response',
+        elapsedMs: Date.now() - started,
+        outputChars: raw.length,
+      });
+      return raw;
+    } catch (error) {
+      recordDiagnostic({
+        requestId,
+        event: signal.aborted ? 'cancel' : 'failure',
+        elapsedMs: Date.now() - started,
+        reason: classifyFailure(error),
+      });
+      throw error;
+    }
+  }
+  private async generateInternal(prompt: string, signal: AbortSignal): Promise<string> {
     if (signal.aborted) throw new Error('已取消生成');
     const c = this.context;
     if (!c.generateRaw) throw new Error('当前酒馆不支持 generateRaw，请升级');

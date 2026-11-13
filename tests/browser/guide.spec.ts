@@ -31,6 +31,16 @@ test('宿主同步报错后可重试，修复等待显示原因并可取消', as
   await expect(page.locator('.sg-status')).toContainText('已等待 1 秒');
   await page.getByRole('button', { name: '取消生成', exact: true }).click();
   await expect(page.getByRole('button', { name: '生成故事草稿' })).toBeEnabled();
+  await page.getByRole('button', { name: '排查日志', exact: true }).click();
+  const logs = page.locator('.sg-modal').last();
+  await expect(logs.locator('pre')).toContainText('JSON解析失败');
+  await expect(logs.locator('pre')).toContainText('SillyTavern.getContext().generateRaw');
+  await expect(logs.locator('pre')).not.toContainText('测试同步失败');
+  const exported = page.waitForEvent('download');
+  await logs.getByRole('button', { name: '导出日志', exact: true }).click();
+  expect((await exported).suggestedFilename()).toBe('剧情指南-排查日志.json');
+  await logs.getByRole('button', { name: '清空日志', exact: true }).click();
+  await expect(logs.locator('pre')).toContainText('"entries": []');
 });
 test('无书创作、剧透控制、安全文本、采用、进度与刷新恢复', async ({ page }) => {
   await expect(page.getByRole('heading', { name: '艾琳的剧情指南' })).toBeVisible();

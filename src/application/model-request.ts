@@ -1,4 +1,5 @@
 import type { Host } from '../host/tavern';
+import { diagnosticId, recordDiagnostic, classifyFailure } from '../diagnostics';
 
 /** 每个请求单独计时；宿主忽略取消时也结束本地等待，并丢弃迟到结果。 */
 export async function requestModel(
@@ -12,6 +13,18 @@ export async function requestModel(
 ): Promise<string> {
   const controller = new AbortController();
   const started = Date.now();
+  const requestId = diagnosticId(controller.signal);
+  recordDiagnostic({
+    requestId,
+    event: 'request',
+    stage: stage.includes('修复')
+      ? '修复'
+      : stage.includes('解析')
+        ? '解析'
+        : stage.includes('合并')
+          ? '合并'
+          : '生成',
+  });
   let timer: ReturnType<typeof setTimeout> | undefined;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   let abort = () => {};
@@ -47,6 +60,14 @@ export async function requestModel(
         })
         .then(resolve, reject);
     });
+  } catch (error) {
+    recordDiagnostic({
+      requestId,
+      event: 'failure',
+      elapsedMs: Date.now() - started,
+      reason: classifyFailure(error),
+    });
+    throw error;
   } finally {
     clearTimeout(timer);
     clearInterval(heartbeat);
