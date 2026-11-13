@@ -273,6 +273,33 @@
   flex: 1;
   max-width: 380px;
 }
+.sg-progress-actions {
+  gap: 10px;
+  margin: 16px 0 20px;
+}
+.sg-character-groups {
+  margin: 16px 0;
+}
+.sg-character-groups h3 {
+  margin: 0 0 10px;
+}
+.sg-character-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+.sg-character-chips .sg-button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.sg-character-chips .sg-active {
+  border-color: var(--sg-accent);
+  background: #493f29;
+}
 .sg-story-heading {
   display: flex;
   align-items: center;

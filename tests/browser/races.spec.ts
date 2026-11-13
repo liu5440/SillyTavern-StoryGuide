@@ -20,5 +20,5 @@ test('切换聊天会关闭旧编辑器，不能把旧节点写入新聊天', as
   });
   await expect(page.locator('.sg-modal')).toHaveCount(0);
   await expect(page.locator('.sg-output')).toContainText('当前：抵达钟楼街');
-  await expect(page.locator('.sg-event-row')).not.toContainText('已完成');
+  await expect(page.locator('.sg-event-row').filter({ hasText: '已完成' })).toHaveCount(0);
 });

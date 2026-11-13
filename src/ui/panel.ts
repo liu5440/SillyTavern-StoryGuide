@@ -16,6 +16,7 @@ import { MaterialsController } from '../application/materials';
 import { openMaterials } from './materials';
 import { openDiagnostics } from './diagnostics';
 import { buildLocalCatalog } from '../application/local-catalog';
+import { characterGroups } from '../domain/character-groups';
 
 const provenance = { explicit: '原文明确', inferred: '模型推断', original: '原创故事', user: '用户设定' };
 const kinds = { start: '开场', event: '事件', choice: '选择', ending: '结局' };
@@ -34,7 +35,9 @@ export class GuidePanel {
   private stories: Story[] = [];
   private run?: RunState;
   private undo: RunState[] = [];
-  private spoilers = false;
+  private readonly spoilers = true;
+  private characterFilter = 'all';
+  private grouping?: { story: Story; groups: ReturnType<typeof characterGroups> };
   private dirty = false;
   private tab = '概览';
   private query = '';
@@ -81,7 +84,9 @@ export class GuidePanel {
         } finally {
           transport.value = this.app.host.getTransport();
         }
-        this.message('调用方式已切换；聊天素材整理也使用此设置。单次请求6000 token输出预算，可能增加用量；不改全局回复长度，不自动重试。');
+        this.message(
+          '调用方式已切换；聊天素材整理也使用此设置。单次请求6000 token输出预算，可能增加用量；不改全局回复长度，不自动重试。',
+        );
       });
     });
     header.append(transport);
@@ -188,7 +193,8 @@ export class GuidePanel {
     this.selectedSources = new Set(snapshot.sources.filter((s) => !s.disabled).map((s) => s.id));
     this.dirty = false;
     this.undo = [];
-    this.spoilers = false;
+    this.characterFilter = 'all';
+    this.query = '';
     this.run = run;
     this.title.textContent = `${snapshot.characterName}的剧情指南`;
     await this.renderSidebar();
@@ -295,6 +301,7 @@ export class GuidePanel {
             this.story = story;
             this.run = run;
             this.dirty = true;
+            this.characterFilter = 'all';
             this.message('草稿已生成，尚未保存或采用。打开完整攻略可编辑事件与分支。');
             this.renderContent();
           } catch (error) {
@@ -349,6 +356,7 @@ export class GuidePanel {
         this.dirty = true;
         this.tab = '事件';
         this.query = '';
+        this.characterFilter = 'all';
         mode.value = 'analyze';
         updateGenerateLabel();
         this.message(
@@ -422,6 +430,11 @@ export class GuidePanel {
     );
     this.sidebar.append(footer);
   }
+  private groupsFor(story: Story) {
+    if (!this.grouping || this.grouping.story !== story)
+      this.grouping = { story, groups: characterGroups(story) };
+    return this.grouping.groups;
+  }
   private renderContent() {
     this.content.replaceChildren();
     const snapshot = this.snapshot;
@@ -464,17 +477,13 @@ export class GuidePanel {
             this.run = run;
             this.dirty = false;
             this.undo = [];
+            this.characterFilter = 'all';
+            this.query = '';
             this.renderContent();
           }),
       );
       actions.append(select);
     }
-    actions.append(
-      check('完整攻略（含剧透）', this.spoilers, (yes) => {
-        this.spoilers = yes;
-        this.renderContent();
-      }).root,
-    );
     this.content.append(actions);
     const story = this.story;
     if (!story) {
@@ -487,7 +496,7 @@ export class GuidePanel {
           '',
           '选择左侧资料，解析角色已有的经历与路线。没有世界书？也可以从人物出发，创作共同线、分支和结局。',
         ),
-        el('p', 'sg-muted', '生成后先审阅草稿；日常游玩默认隐藏未来情节。'),
+        el('p', 'sg-muted', '默认展示完整攻略；生成后先审阅草稿，再采用为游玩依据。'),
       );
       this.content.append(empty);
       return;
@@ -547,6 +556,37 @@ export class GuidePanel {
         ),
       );
     this.content.append(nav);
+    const groups = this.groupsFor(story);
+    if (!groups.some((group) => group.key === this.characterFilter)) this.characterFilter = 'all';
+    const filters = el('section', 'sg-character-groups');
+    filters.setAttribute('aria-label', '按子角色查看');
+    filters.append(el('h3', '', '按子角色查看'));
+    const chips = el('div', 'sg-character-chips');
+    for (const group of groups) {
+      const chip = button(
+        `${group.label}（${group.nodeIds.length}）`,
+        () => {
+          this.characterFilter = group.key;
+          this.renderContent();
+          for (const next of this.content.querySelectorAll<HTMLButtonElement>('[data-character-group]')) {
+            if (next.dataset.characterGroup === group.key) next.focus();
+          }
+        },
+        group.key === this.characterFilter ? 'sg-active' : '',
+      );
+      chip.dataset.characterGroup = group.key;
+      chip.setAttribute('aria-pressed', String(group.key === this.characterFilter));
+      chips.append(chip);
+    }
+    filters.append(
+      chips,
+      el(
+        'small',
+        'sg-muted',
+        '优先按已标注人物分组；无人物字段时按姓名或人物档案及原文提及筛选。未明确归属的资料保留在公共／未分类，不代表路线判定。',
+      ),
+    );
+    this.content.append(filters);
     const search = field('搜索可见事件、人物、地点', this.query);
     search.input.addEventListener('input', () => {
       this.query = search.input.value;
@@ -561,8 +601,12 @@ export class GuidePanel {
     this.output.replaceChildren();
     if (!this.story) return;
     const view = visibleStory(this.story, this.run, this.spoilers);
-    const nodes = view.nodes.filter((n) =>
-      `${n.title} ${n.summary} ${n.location} ${n.characters.join(' ')}`.includes(this.query),
+    const selectedGroup = this.groupsFor(this.story).find((group) => group.key === this.characterFilter);
+    const nodeIds = new Set(selectedGroup?.nodeIds ?? view.nodes.map((node) => node.id));
+    const nodes = view.nodes.filter(
+      (n) =>
+        nodeIds.has(n.id) &&
+        `${n.title} ${n.summary} ${n.location} ${n.characters.join(' ')}`.includes(this.query),
     );
     if (this.tab === '概览') {
       this.output.append(el('p', 'sg-synopsis', view.summary));
@@ -577,7 +621,8 @@ export class GuidePanel {
           this.output.append(
             el('p', 'sg-next', `${edge.label || '继续探索'} · 条件：${edge.condition || '需玩家判断'}`),
           );
-        this.output.append(
+        const progressActions = el('div', 'sg-toolbar sg-progress-actions');
+        progressActions.append(
           button('查看互动建议', () => this.suggestions(view)),
           button('本局选择与变量', () => this.runEditor()),
           button('撤销上次进度', () =>
@@ -593,6 +638,7 @@ export class GuidePanel {
             }),
           ),
         );
+        this.output.append(progressActions);
       }
       this.output.append(el('h3', '', '可探索事件'));
     }
@@ -620,11 +666,14 @@ export class GuidePanel {
             : undefined,
         ),
       );
-      if (this.spoilers)
-        this.output.append(
+      if (this.spoilers) {
+        const graphActions = el('div', 'sg-toolbar');
+        graphActions.append(
           button('添加事件', () => this.nodeDetail()),
           button('添加连线', () => this.edgeDetail()),
         );
+        this.output.append(graphActions);
+      }
       return;
     }
     if (this.tab === '地点') {
@@ -638,7 +687,9 @@ export class GuidePanel {
       }
     } else for (const node of nodes) this.output.append(this.nodeRow(node));
     if (!nodes.length)
-      this.output.append(el('p', 'sg-empty', '没有匹配的可见事件。未来情节可在完整攻略中查看。'));
+      this.output.append(
+        el('p', 'sg-empty', '当前人物分类或搜索下没有匹配资料，可切换“全部资料”或清空搜索。'),
+      );
     if (this.spoilers) this.output.append(button('添加事件', () => this.nodeDetail()));
   }
   private nodeRow(node: StoryNode): HTMLElement {

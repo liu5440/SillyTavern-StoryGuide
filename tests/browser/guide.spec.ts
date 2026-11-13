@@ -7,6 +7,60 @@ test.beforeEach(async ({ page }) => {
   await openGuide(page);
 });
 
+test('多人世界书默认完整显示，可点击人物筛选，概览按钮有间距', async ({ page }) => {
+  await page.locator('.sg-header').getByRole('button', { name: '关闭', exact: true }).click();
+  await page.evaluate(() => {
+    const c = window.SillyTavern?.getContext();
+    const character = c?.characters[0];
+    if (!c || !character || typeof character !== 'object') throw new Error('缺少测试角色');
+    Object.assign(character, {
+      data: {
+        character_book: {
+          entries: [
+            { id: 1, comment: '青岚', content: '姓名：青岚\n性格：沉稳\n外貌：长发' },
+            { id: 2, comment: '白榆', content: '姓名：白榆\n身份：调查员' },
+            { id: 3, comment: '钟楼会面', content: '青岚和白榆在钟楼会面。' },
+            { id: 4, comment: '案件索引', content: '所有案件按目录编号。' },
+          ],
+        },
+      },
+    });
+    c.generateRaw = async () => {
+      throw new Error('本地分类不应调用模型');
+    };
+  });
+  await openGuide(page);
+  await page.getByRole('button', { name: '建立本地资料目录（无需AI）' }).click();
+  await expect(page.getByLabel('完整攻略（含剧透）')).toHaveCount(0);
+  const groups = page.getByRole('region', { name: '按子角色查看' });
+  await groups.getByRole('button', { name: '青岚（2）', exact: true }).click();
+  await expect(page.locator('.sg-event-row')).toHaveCount(2);
+  await expect(groups.getByRole('button', { name: '青岚（2）' })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: '路线图', exact: true }).click();
+  await expect(page.locator('.sg-graph-node')).toHaveCount(2);
+  await page.getByRole('button', { name: '事件', exact: true }).click();
+  await groups.getByRole('button', { name: '公共／未分类（2）', exact: true }).click();
+  await expect(page.locator('.sg-event-row')).toHaveCount(2);
+  await groups.getByRole('button', { name: '全部资料（5）', exact: true }).click();
+  await expect(page.locator('.sg-event-row')).toHaveCount(5);
+  await page.getByRole('button', { name: '概览', exact: true }).click();
+  const boxes = await page.locator('.sg-progress-actions .sg-button').evaluateAll((buttons) =>
+    buttons.map((button) => {
+      const rect = button.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom };
+    }),
+  );
+  expect(boxes).toHaveLength(3);
+  for (let i = 1; i < boxes.length; i++) {
+    const previous = boxes[i - 1],
+      current = boxes[i];
+    if (!previous || !current) throw new Error('缺少按钮位置');
+    expect(
+      current.y > previous.y ? current.y - previous.bottom : current.x - previous.right,
+    ).toBeGreaterThanOrEqual(8);
+  }
+});
+
 test('本地资料目录不调用模型，也能查看原文卡片', async ({ page }) => {
   await page.evaluate(() => {
     const c = window.SillyTavern?.getContext();
@@ -18,13 +72,13 @@ test('本地资料目录不调用模型，也能查看原文卡片', async ({ pa
   await page.getByRole('button', { name: '建立本地资料目录（无需AI）' }).click();
   await expect(page.locator('.sg-status')).toContainText('未调用AI');
   await expect(page.getByRole('button', { name: 'AI分析事件与路线', exact: true })).toBeVisible();
-  await expect(page.getByLabel('完整攻略（含剧透）')).not.toBeChecked();
+  await expect(page.getByLabel('完整攻略（含剧透）')).toHaveCount(0);
   await expect(page.locator('.sg-output')).toContainText('一位住在旧城的调查员。');
   await page.getByRole('button', { name: '保存草稿版本', exact: true }).click();
   await expect(page.locator('.sg-status')).toContainText('已保存');
   await page.reload();
   await openGuide(page);
-  await expect(page.getByLabel('完整攻略（含剧透）')).not.toBeChecked();
+  await expect(page.getByLabel('完整攻略（含剧透）')).toHaveCount(0);
   await expect(page.locator('.sg-output')).toContainText('一位住在旧城的调查员。');
 });
 
@@ -153,9 +207,8 @@ test('无书创作、剧透控制、安全文本、采用、进度与刷新恢�
   await expect(page.getByRole('heading', { name: '艾琳的剧情指南' })).toBeVisible();
   await page.getByRole('button', { name: '生成故事草稿' }).click();
   await expect(page.getByRole('heading', { name: '旧城来信' })).toBeVisible();
-  await expect(page.getByText('隐藏的真相', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('隐藏的真相', { exact: true })).toBeVisible();
   await expect(page.locator('.sg-panel img')).toHaveCount(0);
-  await page.getByLabel('完整攻略（含剧透）').check();
   await expect(page.getByText('隐藏的真相', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '路线图', exact: true }).click();
   await expect(page.locator('.sg-graph-node')).toHaveCount(2);
@@ -198,5 +251,5 @@ test('导出的本局备份可以导入并采用，完成状态不丢失', async
   await expect(page.locator('.sg-modal')).toHaveCount(0);
   await page.getByRole('button', { name: '采用此故事' }).click();
   await expect(page.locator('.sg-story-heading .sg-badge')).toContainText('已采用');
-  await expect(page.locator('.sg-event-row')).toContainText('已完成');
+  await expect(page.locator('.sg-event-row').filter({ hasText: '已完成' })).toHaveCount(1);
 });
