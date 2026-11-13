@@ -9,6 +9,7 @@ import {
 import { chatArchiveSchema, type ChatArchive } from '../domain/chat-archive';
 import { materialSchema, type Material } from '../domain/materials';
 import { chatMaterialPrompt } from '../ai/material-prompts';
+import { requestModel } from './model-request';
 
 interface ChatHost {
   modelConnection?(): string;
@@ -78,17 +79,15 @@ export class ChatMaterialsController {
       for (const [index, batch] of batches.entries()) {
         this.guard(selected);
         if (signal.aborted) throw new Error('已取消整理，结果未保存');
-        progress(
-          `正在整理第${index + 1}/${batches.length}批 · 已完成${result.completedBatches}批 · 已得到${result.cards.length}条草稿`,
-        );
-        const timeout = new AbortController();
-        const cancel = () => timeout.abort();
-        signal.addEventListener('abort', cancel, { once: true });
-        const timer = setTimeout(() => timeout.abort(), 180000);
         try {
-          const raw = await this.host.generate(chatMaterialPrompt(batch), timeout.signal);
+          const raw = await requestModel(
+            this.host,
+            chatMaterialPrompt(batch),
+            signal,
+            `正在整理第${index + 1}/${batches.length}批 · 已完成${result.completedBatches}批 · 已得到${result.cards.length}条草稿`,
+            progress,
+          );
           if (signal.aborted) throw new Error('已取消整理，结果未保存');
-          if (timeout.signal.aborted) throw new Error('本批整理超时');
           this.guard(selected);
           const cards = decodeChatMaterials(raw, { ...selected, messages: batch }, messages);
           if (result.cards.length + cards.length > 200)
@@ -101,9 +100,6 @@ export class ChatMaterialsController {
           if (!result.completedBatches) throw error;
           result.error = error instanceof Error ? error.message : '本批失败';
           return result;
-        } finally {
-          clearTimeout(timer);
-          signal.removeEventListener('abort', cancel);
         }
       }
       return result;

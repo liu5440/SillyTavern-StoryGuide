@@ -1,6 +1,6 @@
 {
   "name": "sillytavern-story-guide",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "type": "module",
   "description": "酒馆剧情指南：中文事件、分支与故事创作扩展",

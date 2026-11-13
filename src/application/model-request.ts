@@ -3,7 +3,7 @@ import { diagnosticId, recordDiagnostic, classifyFailure } from '../diagnostics'
 
 /** 每个请求单独计时；宿主忽略取消时也结束本地等待，并丢弃迟到结果。 */
 export async function requestModel(
-  host: Host,
+  host: Pick<Host, 'generate'>,
   prompt: string,
   signal: AbortSignal,
   stage: string,

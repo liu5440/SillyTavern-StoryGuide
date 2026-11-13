@@ -4,6 +4,8 @@ import { planChatBatches, type ChatCapture } from '../domain/chat-materials';
 import { chatArchiveFileName } from '../domain/chat-archive';
 import { materialCategories, type Material } from '../domain/materials';
 import { el, button, check, field, showModal, download } from './dom';
+import { openDiagnostics } from './diagnostics';
+import { diagnosticReport } from '../diagnostics';
 
 /** UI只收集范围与审阅结果，读取、模型调用和写入均由应用层负责。 */
 export function openChatMaterials(materials: MaterialsController, saved: () => Promise<void>) {
@@ -80,6 +82,11 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
       const batches = count > 0 && count <= 50 ? planChatBatches(messages).length : 0;
       summary.textContent = `选中${count}条 · ${size}字符。${batches ? `将自动分${batches}批，预计调用模型${batches}次；单批最多12000字符，不需要手动拆分。` : '请选择1–50条消息。'}将只把这些消息发给酒馆当前模型。`;
       generate.disabled = busy || !batches;
+      generate.title = busy
+        ? '正在等待酒馆模型返回，可取消整理或查看排查日志'
+        : !batches
+          ? '请预览范围并勾选1–50条有效消息'
+          : '将选中消息交给酒馆当前模型整理';
       exportChat.disabled = busy || !batches;
       saveArchive.disabled = busy || !batches;
     };
@@ -122,9 +129,10 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
         );
       } catch (error) {
         capture = undefined;
+        selected.clear();
         sourceList.replaceChildren();
         resetResults();
-        generate.disabled = true;
+        updateSummary();
         message(error instanceof Error ? error.message : '读取聊天失败', true);
       }
     });
@@ -309,7 +317,7 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
     const range = el('div', 'sg-material-controls sg-chat-range');
     range.append(start.root, end.root, preview);
     const actions = el('div', 'sg-toolbar');
-    actions.append(generate, cancel, saveArchive, exportChat);
+    actions.append(generate, cancel, saveArchive, exportChat, button('排查日志', openDiagnostics));
     body.append(
       el(
         'p',
@@ -338,12 +346,14 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
       unsubscribe = materials.watchChat(invalidate);
       try {
         const current = app.info();
-        info.textContent = `当前共有${current.total}条消息 · 模型连接：${current.api}`;
+        info.textContent = `当前共有${current.total}条消息 · 模型连接：${current.api} · 扩展版本：${diagnosticReport().version}`;
         start.input.value = String(Math.max(1, current.total - 49));
         end.input.value = String(Math.max(1, current.total));
         if (!current.total) {
           preview.disabled = true;
           message('当前聊天为空，请先进行聊天。');
+        } else {
+          preview.click();
         }
       } catch (error) {
         preview.disabled = true;

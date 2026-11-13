@@ -4499,7 +4499,7 @@ function diagnosticReport() {
   return {
     format: "story-guide-diagnostics",
     schemaVersion: 1,
-    version: "0.4.2",
+    version: "0.4.3",
     modelSource: "SillyTavern.getContext().generateRaw",
     retention: "\u5F53\u524D\u9875\u9762\u5185\u5B58\u6700\u8FD1100\u6761\uFF0C\u5237\u65B0\u6E05\u7A7A",
     entries: entries.map((entry) => ({ ...entry, fields: entry.fields?.slice() }))
@@ -5646,17 +5646,15 @@ var ChatMaterialsController = class {
       for (const [index, batch] of batches.entries()) {
         this.guard(selected);
         if (signal.aborted) throw new Error("\u5DF2\u53D6\u6D88\u6574\u7406\uFF0C\u7ED3\u679C\u672A\u4FDD\u5B58");
-        progress(
-          `\u6B63\u5728\u6574\u7406\u7B2C${index + 1}/${batches.length}\u6279 \xB7 \u5DF2\u5B8C\u6210${result.completedBatches}\u6279 \xB7 \u5DF2\u5F97\u5230${result.cards.length}\u6761\u8349\u7A3F`
-        );
-        const timeout = new AbortController();
-        const cancel = () => timeout.abort();
-        signal.addEventListener("abort", cancel, { once: true });
-        const timer = setTimeout(() => timeout.abort(), 18e4);
         try {
-          const raw = await this.host.generate(chatMaterialPrompt(batch), timeout.signal);
+          const raw = await requestModel(
+            this.host,
+            chatMaterialPrompt(batch),
+            signal,
+            `\u6B63\u5728\u6574\u7406\u7B2C${index + 1}/${batches.length}\u6279 \xB7 \u5DF2\u5B8C\u6210${result.completedBatches}\u6279 \xB7 \u5DF2\u5F97\u5230${result.cards.length}\u6761\u8349\u7A3F`,
+            progress
+          );
           if (signal.aborted) throw new Error("\u5DF2\u53D6\u6D88\u6574\u7406\uFF0C\u7ED3\u679C\u672A\u4FDD\u5B58");
-          if (timeout.signal.aborted) throw new Error("\u672C\u6279\u6574\u7406\u8D85\u65F6");
           this.guard(selected);
           const cards = decodeChatMaterials(raw, { ...selected, messages: batch }, messages);
           if (result.cards.length + cards.length > 200)
@@ -5669,9 +5667,6 @@ var ChatMaterialsController = class {
           if (!result.completedBatches) throw error;
           result.error = error instanceof Error ? error.message : "\u672C\u6279\u5931\u8D25";
           return result;
-        } finally {
-          clearTimeout(timer);
-          signal.removeEventListener("abort", cancel);
         }
       }
       return result;
@@ -5814,6 +5809,46 @@ var MaterialsController = class {
   }
 };
 
+// src/ui/diagnostics.ts
+function openDiagnostics() {
+  showModal("\u6392\u67E5\u65E5\u5FD7", (body) => {
+    body.append(
+      el(
+        "p",
+        "",
+        "\u7EE7\u7EED\u4F7F\u7528\u9152\u9986\u5F53\u524DAI\u8FDE\u63A5\u3002\u4EC5\u4FDD\u5B58\u672C\u9875\u9762\u6700\u8FD1100\u6761\uFF1B\u5237\u65B0\u540E\u6E05\u7A7A\uFF0C\u8BF7\u5148\u5BFC\u51FA\u3002\u65E5\u5FD7\u4E0D\u542B\u804A\u5929\u3001\u5B8C\u6574\u6A21\u578B\u56DE\u590D\u6216\u5BC6\u94A5\u3002"
+      )
+    );
+    const text2 = el("pre");
+    text2.style.whiteSpace = "pre-wrap";
+    text2.style.overflowWrap = "anywhere";
+    const status = el("p");
+    const refresh = () => {
+      text2.textContent = JSON.stringify(diagnosticReport(), null, 2);
+    };
+    body.append(
+      button("\u5237\u65B0\u65E5\u5FD7", refresh),
+      button("\u590D\u5236\u65E5\u5FD7", async () => {
+        try {
+          await navigator.clipboard.writeText(JSON.stringify(diagnosticReport(), null, 2));
+          status.textContent = "\u65E5\u5FD7\u5DF2\u590D\u5236";
+        } catch {
+          status.textContent = "\u590D\u5236\u5931\u8D25\uFF0C\u8BF7\u4F7F\u7528\u5BFC\u51FA\u65E5\u5FD7";
+        }
+      }),
+      button("\u5BFC\u51FA\u65E5\u5FD7", () => download("\u5267\u60C5\u6307\u5357-\u6392\u67E5\u65E5\u5FD7.json", diagnosticReport())),
+      button("\u6E05\u7A7A\u65E5\u5FD7", () => {
+        clearDiagnostics();
+        refresh();
+        status.textContent = "\u65E5\u5FD7\u5DF2\u6E05\u7A7A";
+      }),
+      status,
+      text2
+    );
+    refresh();
+  });
+}
+
 // src/ui/chat-materials.ts
 function openChatMaterials(materials, saved) {
   const app = materials.chatController();
@@ -5879,6 +5914,7 @@ function openChatMaterials(materials, saved) {
       const batches = count > 0 && count <= 50 ? planChatBatches(messages).length : 0;
       summary.textContent = `\u9009\u4E2D${count}\u6761 \xB7 ${size}\u5B57\u7B26\u3002${batches ? `\u5C06\u81EA\u52A8\u5206${batches}\u6279\uFF0C\u9884\u8BA1\u8C03\u7528\u6A21\u578B${batches}\u6B21\uFF1B\u5355\u6279\u6700\u591A12000\u5B57\u7B26\uFF0C\u4E0D\u9700\u8981\u624B\u52A8\u62C6\u5206\u3002` : "\u8BF7\u9009\u62E91\u201350\u6761\u6D88\u606F\u3002"}\u5C06\u53EA\u628A\u8FD9\u4E9B\u6D88\u606F\u53D1\u7ED9\u9152\u9986\u5F53\u524D\u6A21\u578B\u3002`;
       generate.disabled = busy || !batches;
+      generate.title = busy ? "\u6B63\u5728\u7B49\u5F85\u9152\u9986\u6A21\u578B\u8FD4\u56DE\uFF0C\u53EF\u53D6\u6D88\u6574\u7406\u6216\u67E5\u770B\u6392\u67E5\u65E5\u5FD7" : !batches ? "\u8BF7\u9884\u89C8\u8303\u56F4\u5E76\u52FE\u90091\u201350\u6761\u6709\u6548\u6D88\u606F" : "\u5C06\u9009\u4E2D\u6D88\u606F\u4EA4\u7ED9\u9152\u9986\u5F53\u524D\u6A21\u578B\u6574\u7406";
       exportChat.disabled = busy || !batches;
       saveArchive.disabled = busy || !batches;
     };
@@ -5919,9 +5955,10 @@ function openChatMaterials(materials, saved) {
         );
       } catch (error) {
         capture = void 0;
+        selected.clear();
         sourceList.replaceChildren();
         resetResults();
-        generate.disabled = true;
+        updateSummary();
         message(error instanceof Error ? error.message : "\u8BFB\u53D6\u804A\u5929\u5931\u8D25", true);
       }
     });
@@ -6098,7 +6135,7 @@ function openChatMaterials(materials, saved) {
     const range = el("div", "sg-material-controls sg-chat-range");
     range.append(start.root, end.root, preview);
     const actions = el("div", "sg-toolbar");
-    actions.append(generate, cancel, saveArchive, exportChat);
+    actions.append(generate, cancel, saveArchive, exportChat, button("\u6392\u67E5\u65E5\u5FD7", openDiagnostics));
     body.append(
       el(
         "p",
@@ -6126,12 +6163,14 @@ function openChatMaterials(materials, saved) {
       unsubscribe = materials.watchChat(invalidate);
       try {
         const current = app.info();
-        info.textContent = `\u5F53\u524D\u5171\u6709${current.total}\u6761\u6D88\u606F \xB7 \u6A21\u578B\u8FDE\u63A5\uFF1A${current.api}`;
+        info.textContent = `\u5F53\u524D\u5171\u6709${current.total}\u6761\u6D88\u606F \xB7 \u6A21\u578B\u8FDE\u63A5\uFF1A${current.api} \xB7 \u6269\u5C55\u7248\u672C\uFF1A${diagnosticReport().version}`;
         start.input.value = String(Math.max(1, current.total - 49));
         end.input.value = String(Math.max(1, current.total));
         if (!current.total) {
           preview.disabled = true;
           message("\u5F53\u524D\u804A\u5929\u4E3A\u7A7A\uFF0C\u8BF7\u5148\u8FDB\u884C\u804A\u5929\u3002");
+        } else {
+          preview.click();
         }
       } catch (error) {
         preview.disabled = true;
@@ -6533,46 +6572,6 @@ function openExtractor(app, saved) {
         "sg-primary"
       )
     );
-  });
-}
-
-// src/ui/diagnostics.ts
-function openDiagnostics() {
-  showModal("\u6392\u67E5\u65E5\u5FD7", (body) => {
-    body.append(
-      el(
-        "p",
-        "",
-        "\u7EE7\u7EED\u4F7F\u7528\u9152\u9986\u5F53\u524DAI\u8FDE\u63A5\u3002\u4EC5\u4FDD\u5B58\u672C\u9875\u9762\u6700\u8FD1100\u6761\uFF1B\u5237\u65B0\u540E\u6E05\u7A7A\uFF0C\u8BF7\u5148\u5BFC\u51FA\u3002\u65E5\u5FD7\u4E0D\u542B\u804A\u5929\u3001\u5B8C\u6574\u6A21\u578B\u56DE\u590D\u6216\u5BC6\u94A5\u3002"
-      )
-    );
-    const text2 = el("pre");
-    text2.style.whiteSpace = "pre-wrap";
-    text2.style.overflowWrap = "anywhere";
-    const status = el("p");
-    const refresh = () => {
-      text2.textContent = JSON.stringify(diagnosticReport(), null, 2);
-    };
-    body.append(
-      button("\u5237\u65B0\u65E5\u5FD7", refresh),
-      button("\u590D\u5236\u65E5\u5FD7", async () => {
-        try {
-          await navigator.clipboard.writeText(JSON.stringify(diagnosticReport(), null, 2));
-          status.textContent = "\u65E5\u5FD7\u5DF2\u590D\u5236";
-        } catch {
-          status.textContent = "\u590D\u5236\u5931\u8D25\uFF0C\u8BF7\u4F7F\u7528\u5BFC\u51FA\u65E5\u5FD7";
-        }
-      }),
-      button("\u5BFC\u51FA\u65E5\u5FD7", () => download("\u5267\u60C5\u6307\u5357-\u6392\u67E5\u65E5\u5FD7.json", diagnosticReport())),
-      button("\u6E05\u7A7A\u65E5\u5FD7", () => {
-        clearDiagnostics();
-        refresh();
-        status.textContent = "\u65E5\u5FD7\u5DF2\u6E05\u7A7A";
-      }),
-      status,
-      text2
-    );
-    refresh();
   });
 }
 

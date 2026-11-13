@@ -38,8 +38,29 @@ async function prepare(page: import('@playwright/test').Page) {
   await expect(page.locator('.sg-status')).toContainText('条资料已读取');
   await page.getByRole('button', { name: '场景素材库', exact: true }).click();
   await page.getByRole('button', { name: '从当前聊天整理' }).click();
-  await page.getByRole('button', { name: '预览当前范围' }).click();
+  await expect(page.locator('.sg-chat-material-status')).toContainText('已刷新第1次预览');
 }
+
+test('打开即预览且不调用模型，等待有秒数，窗口内可看日志并取消', async ({ page }) => {
+  await prepare(page);
+  await expect(page.getByRole('button', { name: '用当前模型整理' })).toBeEnabled();
+  expect(
+    await page.evaluate(() => (window as unknown as { testPrompt?: string }).testPrompt),
+  ).toBeUndefined();
+  await page.evaluate(() => {
+    const c = window.SillyTavern?.getContext();
+    if (!c) throw new Error('缺少测试宿主');
+    c.generateRaw = async () => new Promise<string>(() => {});
+  });
+  await page.getByRole('button', { name: '用当前模型整理' }).click();
+  await expect(page.locator('.sg-chat-material-status')).toContainText('已等待 1 秒');
+  await page.locator('.sg-chat-materials').getByRole('button', { name: '排查日志', exact: true }).click();
+  const logs = page.locator('.sg-modal').last();
+  await expect(logs.locator('pre')).toContainText('inputChars');
+  await logs.getByRole('button', { name: '关闭', exact: true }).click();
+  await page.getByRole('button', { name: '取消整理', exact: true }).click();
+  await expect(page.getByRole('button', { name: '用当前模型整理' })).toBeEnabled();
+});
 
 test('所选聊天由当前模型整理，预览编辑后保存并回看消息来源', async ({ page }) => {
   await prepare(page);
