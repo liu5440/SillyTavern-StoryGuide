@@ -58,6 +58,7 @@ export class GuidePanel {
       heading,
       button('资料设置', () => {
         this.dialog.classList.toggle('sg-show-settings');
+        this.body.scrollTop = 0;
       }),
       button('放大', () => {
         const large = this.dialog.classList.toggle('sg-expanded');

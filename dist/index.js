@@ -7138,6 +7138,7 @@ var GuidePanel = class {
       heading,
       button("\u8D44\u6599\u8BBE\u7F6E", () => {
         this.dialog.classList.toggle("sg-show-settings");
+        this.body.scrollTop = 0;
       }),
       button("\u653E\u5927", () => {
         const large = this.dialog.classList.toggle("sg-expanded");
