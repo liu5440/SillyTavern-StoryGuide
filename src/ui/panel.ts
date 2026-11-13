@@ -58,11 +58,12 @@ export class GuidePanel {
       heading,
       button('资料设置', () => {
         this.dialog.classList.toggle('sg-show-settings');
+        this.renderContent();
         this.body.scrollTop = 0;
       }),
       button('放大', () => {
         const large = this.dialog.classList.toggle('sg-expanded');
-        const toggle = header.querySelector<HTMLButtonElement>('[data-layout-toggle]');
+        const toggle = this.dialog.querySelector<HTMLButtonElement>('[data-layout-toggle]');
         if (toggle) toggle.textContent = large ? '悬浮阅读' : '放大';
       }),
       button('收起', () => {
@@ -109,11 +110,31 @@ export class GuidePanel {
         );
       });
     });
-    header.append(transport);
+    const footer = el('footer', 'sg-phone-nav');
+    const tools = el('details', 'sg-phone-tools');
+    tools.append(el('summary', '', '更多'));
+    const toolItems = el('div', 'sg-phone-tool-items');
+    const settings = [...header.querySelectorAll('button')].find((item) => item.textContent === '资料设置');
+    for (const item of [...header.querySelectorAll('button')]) {
+      if (item === settings || item.textContent === '收起' || item.textContent === '关闭') continue;
+      toolItems.append(item);
+    }
+    toolItems.append(transport);
+    tools.append(toolItems);
+    footer.append(
+      button('阅读', () => {
+        this.dialog.classList.remove('sg-show-settings');
+        tools.open = false;
+        this.renderContent();
+        this.body.scrollTop = 0;
+      }),
+    );
+    if (settings) footer.append(settings);
+    footer.append(tools);
     this.status.setAttribute('role', 'status');
     this.status.setAttribute('aria-live', 'polite');
     this.body.append(this.sidebar, this.content);
-    this.dialog.append(header, this.status, this.body);
+    this.dialog.append(header, this.status, this.body, footer);
     this.dialog.addEventListener('cancel', (event) => {
       if (this.dirty && !confirm('草稿尚未保存，关闭后更改不会保留。继续？')) event.preventDefault();
       else this.abort?.abort();
@@ -513,6 +534,7 @@ export class GuidePanel {
       );
       actions.append(select);
     }
+    actions.classList.add('sg-version-actions');
     this.content.append(actions);
     const story = this.story;
     if (!story) {
@@ -556,7 +578,10 @@ export class GuidePanel {
         }),
       ),
     );
-    this.content.append(saveActions);
+    const storyActions = el('details', 'sg-story-actions');
+    storyActions.open = this.dialog.classList.contains('sg-show-settings');
+    storyActions.append(el('summary', '', '故事操作'), saveActions);
+    this.content.append(storyActions);
     if (this.run?.needsReview)
       this.content.append(el('p', 'sg-warning', '聊天内容已变动，本局进度待核对。确认节点后可继续记录。'));
     if (
@@ -585,7 +610,7 @@ export class GuidePanel {
         ),
       );
     this.content.append(nav);
-    this.content.append(
+    storyActions.append(
       button(`查看原始资料（${story.sources.length}）`, () =>
         showModal('原始资料 · 不代表事件', (body) => body.append(sourceCatalog(story.sources))),
       ),
@@ -596,6 +621,19 @@ export class GuidePanel {
     filters.setAttribute('aria-label', '按子角色查看');
     filters.append(el('h3', '', '按子角色查看'));
     const chips = el('div', 'sg-character-chips');
+    const picker = el('select', 'sg-character-picker');
+    picker.setAttribute('aria-label', '选择查看的人物');
+    for (const group of groups) {
+      const option = el('option', '', `${group.label}（${group.nodeIds.length}）`);
+      option.value = group.key;
+      picker.append(option);
+    }
+    picker.value = this.characterFilter;
+    picker.addEventListener('change', () => {
+      this.characterFilter = picker.value;
+      this.renderContent();
+    });
+    filters.append(picker);
     for (const group of groups) {
       const chip = button(
         `${group.label}（${group.nodeIds.length}）`,
@@ -622,6 +660,8 @@ export class GuidePanel {
     );
     this.content.append(filters);
     const search = field('搜索可见事件、人物、地点', this.query);
+    search.root.classList.add('sg-read-search');
+    search.input.placeholder = '搜索人物、资料或事件';
     search.input.addEventListener('input', () => {
       this.query = search.input.value;
       this.renderOutput();

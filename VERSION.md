@@ -2,12 +2,12 @@
 
 ## 当前版本
 
-**0.6.2**，发布于 **2026-11-14**。主要变化是手机式悬浮手册、悬浮球收起恢复及阅读间距调整，详情见 [更新日志](CHANGELOG.md)。
+**0.6.3**，发布于 **2026-11-14**。主要变化是手机比例、底部导航与长人物档案阅读排版，详情见 [更新日志](CHANGELOG.md)。
 
 | 项目 | 当前状态 |
 | --- | --- |
 | 安装与更新渠道 | [GitHub 仓库](https://github.com/liu5440/SillyTavern-StoryGuide)的 `main` 分支 |
-| 扩展版本 | `manifest.json`、`package.json`、`package-lock.json` 均为 `0.6.2` |
+| 扩展版本 | `manifest.json`、`package.json`、`package-lock.json` 均为 `0.6.3` |
 | 已验证宿主 | SillyTavern 1.19.0，本机 release 提交 `06bde939f` |
 | 使用范围 | 单角色聊天；不支持群聊 |
 | 安装依赖 | 不需要独立后台、额外插件或本地 npm 构建 |

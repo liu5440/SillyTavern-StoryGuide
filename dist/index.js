@@ -4499,7 +4499,7 @@ function diagnosticReport() {
   return {
     format: "story-guide-diagnostics",
     schemaVersion: 1,
-    version: "0.6.2",
+    version: "0.6.3",
     modelSource: "SillyTavern.getContext().generateRaw / \u9152\u9986\u53C2\u6570\u6784\u9020\u4E0ESSE\u89E3\u6790",
     retention: "\u5F53\u524D\u9875\u9762\u5185\u5B58\u6700\u8FD1100\u6761\uFF0C\u5237\u65B0\u6E05\u7A7A",
     entries: entries.map((entry) => ({ ...entry, fields: entry.fields?.slice() }))
@@ -7138,11 +7138,12 @@ var GuidePanel = class {
       heading,
       button("\u8D44\u6599\u8BBE\u7F6E", () => {
         this.dialog.classList.toggle("sg-show-settings");
+        this.renderContent();
         this.body.scrollTop = 0;
       }),
       button("\u653E\u5927", () => {
         const large = this.dialog.classList.toggle("sg-expanded");
-        const toggle = header.querySelector("[data-layout-toggle]");
+        const toggle = this.dialog.querySelector("[data-layout-toggle]");
         if (toggle) toggle.textContent = large ? "\u60AC\u6D6E\u9605\u8BFB" : "\u653E\u5927";
       }),
       button("\u6536\u8D77", () => {
@@ -7190,11 +7191,31 @@ var GuidePanel = class {
         );
       });
     });
-    header.append(transport);
+    const footer = el("footer", "sg-phone-nav");
+    const tools = el("details", "sg-phone-tools");
+    tools.append(el("summary", "", "\u66F4\u591A"));
+    const toolItems = el("div", "sg-phone-tool-items");
+    const settings = [...header.querySelectorAll("button")].find((item) => item.textContent === "\u8D44\u6599\u8BBE\u7F6E");
+    for (const item of [...header.querySelectorAll("button")]) {
+      if (item === settings || item.textContent === "\u6536\u8D77" || item.textContent === "\u5173\u95ED") continue;
+      toolItems.append(item);
+    }
+    toolItems.append(transport);
+    tools.append(toolItems);
+    footer.append(
+      button("\u9605\u8BFB", () => {
+        this.dialog.classList.remove("sg-show-settings");
+        tools.open = false;
+        this.renderContent();
+        this.body.scrollTop = 0;
+      })
+    );
+    if (settings) footer.append(settings);
+    footer.append(tools);
     this.status.setAttribute("role", "status");
     this.status.setAttribute("aria-live", "polite");
     this.body.append(this.sidebar, this.content);
-    this.dialog.append(header, this.status, this.body);
+    this.dialog.append(header, this.status, this.body, footer);
     this.dialog.addEventListener("cancel", (event) => {
       if (this.dirty && !confirm("\u8349\u7A3F\u5C1A\u672A\u4FDD\u5B58\uFF0C\u5173\u95ED\u540E\u66F4\u6539\u4E0D\u4F1A\u4FDD\u7559\u3002\u7EE7\u7EED\uFF1F")) event.preventDefault();
       else this.abort?.abort();
@@ -7606,6 +7627,7 @@ var GuidePanel = class {
       );
       actions.append(select);
     }
+    actions.classList.add("sg-version-actions");
     this.content.append(actions);
     const story = this.story;
     if (!story) {
@@ -7650,7 +7672,10 @@ var GuidePanel = class {
         })
       )
     );
-    this.content.append(saveActions);
+    const storyActions = el("details", "sg-story-actions");
+    storyActions.open = this.dialog.classList.contains("sg-show-settings");
+    storyActions.append(el("summary", "", "\u6545\u4E8B\u64CD\u4F5C"), saveActions);
+    this.content.append(storyActions);
     if (this.run?.needsReview)
       this.content.append(el("p", "sg-warning", "\u804A\u5929\u5185\u5BB9\u5DF2\u53D8\u52A8\uFF0C\u672C\u5C40\u8FDB\u5EA6\u5F85\u6838\u5BF9\u3002\u786E\u8BA4\u8282\u70B9\u540E\u53EF\u7EE7\u7EED\u8BB0\u5F55\u3002"));
     if (story.sources.some((old) => {
@@ -7677,7 +7702,7 @@ var GuidePanel = class {
         )
       );
     this.content.append(nav);
-    this.content.append(
+    storyActions.append(
       button(
         `\u67E5\u770B\u539F\u59CB\u8D44\u6599\uFF08${story.sources.length}\uFF09`,
         () => showModal("\u539F\u59CB\u8D44\u6599 \xB7 \u4E0D\u4EE3\u8868\u4E8B\u4EF6", (body) => body.append(sourceCatalog(story.sources)))
@@ -7689,6 +7714,19 @@ var GuidePanel = class {
     filters.setAttribute("aria-label", "\u6309\u5B50\u89D2\u8272\u67E5\u770B");
     filters.append(el("h3", "", "\u6309\u5B50\u89D2\u8272\u67E5\u770B"));
     const chips = el("div", "sg-character-chips");
+    const picker = el("select", "sg-character-picker");
+    picker.setAttribute("aria-label", "\u9009\u62E9\u67E5\u770B\u7684\u4EBA\u7269");
+    for (const group of groups) {
+      const option = el("option", "", `${group.label}\uFF08${group.nodeIds.length}\uFF09`);
+      option.value = group.key;
+      picker.append(option);
+    }
+    picker.value = this.characterFilter;
+    picker.addEventListener("change", () => {
+      this.characterFilter = picker.value;
+      this.renderContent();
+    });
+    filters.append(picker);
     for (const group of groups) {
       const chip = button(
         `${group.label}\uFF08${group.nodeIds.length}\uFF09`,
@@ -7715,6 +7753,8 @@ var GuidePanel = class {
     );
     this.content.append(filters);
     const search = field("\u641C\u7D22\u53EF\u89C1\u4E8B\u4EF6\u3001\u4EBA\u7269\u3001\u5730\u70B9", this.query);
+    search.root.classList.add("sg-read-search");
+    search.input.placeholder = "\u641C\u7D22\u4EBA\u7269\u3001\u8D44\u6599\u6216\u4E8B\u4EF6";
     search.input.addEventListener("input", () => {
       this.query = search.input.value;
       this.renderOutput();

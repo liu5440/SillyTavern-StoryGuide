@@ -620,29 +620,31 @@
 
 /* 悬浮手册使用非模态dialog，聊天页面保持可交互。 */
 .sg-panel.sg-floating:not(.sg-expanded) {
+  overflow: hidden;
   position: fixed;
   inset: 52px 16px auto auto;
   margin: 0;
-  width: 460px;
-  height: calc(100dvh - 140px);
-  max-height: 850px;
+  width: min(400px, calc((100dvh - 96px) * 0.52), calc(100vw - 24px));
+  height: min(820px, calc(100dvh - 96px));
+  max-height: calc(100dvh - 96px);
   z-index: 1000;
   border-radius: 22px;
   box-shadow: 0 12px 36px #0006;
 }
 .sg-floating .sg-header {
-  padding: 16px 20px;
-  gap: 10px;
+  padding: 18px;
+  gap: 8px;
+  flex-wrap: nowrap;
 }
 .sg-floating:not(.sg-expanded) .sg-header > div {
-  flex: 1 0 100%;
+  flex: 1;
   min-width: 0;
 }
 .sg-floating:not(.sg-expanded) .sg-header h2 {
-  font-size: 19px;
+  font-size: 17px;
   overflow-wrap: anywhere;
-  max-height: 54px;
-  overflow: auto;
+  max-height: 48px;
+  overflow: hidden;
 }
 .sg-floating:not(.sg-expanded) .sg-header > .sg-button {
   padding: 5px 10px;
@@ -670,7 +672,7 @@
 }
 .sg-floating .sg-content {
   overflow: visible;
-  padding: 22px;
+  padding: 18px;
 }
 .sg-floating.sg-expanded {
   position: fixed;
@@ -741,9 +743,142 @@
     inset: 48px 8px auto;
     width: calc(100vw - 16px);
     max-width: calc(100vw - 16px);
-    height: 56dvh;
-    max-height: calc(100dvh - 210px);
+    height: calc(100dvh - 140px);
+    max-height: calc(100dvh - 140px);
   }
+}
+.sg-floating .sg-brand {
+  display: none;
+}
+.sg-floating .sg-status {
+  padding: 8px 18px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.sg-floating .sg-status.sg-error {
+  white-space: pre-wrap;
+  max-height: 90px;
+  overflow: auto;
+}
+.sg-phone-nav {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--sg-line);
+  background: var(--sg-bg);
+  flex-shrink: 0;
+}
+.sg-phone-nav > .sg-button,
+.sg-phone-tools > summary {
+  min-height: 42px;
+  text-align: center;
+  font-size: 13px;
+}
+.sg-phone-tools {
+  position: relative;
+}
+.sg-phone-tools > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 9px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--sg-line);
+}
+.sg-phone-tools > summary::-webkit-details-marker {
+  display: none;
+}
+.sg-phone-tool-items {
+  position: absolute;
+  bottom: 54px;
+  right: 0;
+  width: 260px;
+  max-height: min(360px, max(80px, calc(100dvh - 260px)));
+  overflow-y: auto;
+  max-width: calc(100vw - 48px);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+  background: var(--sg-surface);
+  border: 1px solid var(--sg-line);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px #0006;
+  z-index: 2;
+}
+.sg-phone-tool-items > select {
+  width: 100%;
+  min-width: 0;
+}
+.sg-character-picker {
+  display: none;
+}
+.sg-floating:not(.sg-show-settings):not(.sg-expanded) .sg-version-actions,
+.sg-floating:not(.sg-show-settings):not(.sg-expanded) .sg-character-chips,
+.sg-floating:not(.sg-show-settings):not(.sg-expanded) .sg-character-groups > h3,
+.sg-floating:not(.sg-show-settings):not(.sg-expanded) .sg-character-groups > small {
+  display: none;
+}
+.sg-floating:not(.sg-show-settings):not(.sg-expanded) .sg-character-picker {
+  display: block;
+  width: 100%;
+  min-height: 42px;
+}
+.sg-floating .sg-story-heading h2 {
+  font-size: 19px;
+  margin-bottom: 8px;
+}
+.sg-floating .sg-story-heading {
+  margin: 0 0 12px;
+  gap: 8px;
+}
+.sg-floating:not(.sg-show-settings) .sg-read-search {
+  position: relative;
+  margin: 12px 0 16px;
+}
+.sg-floating:not(.sg-show-settings) .sg-read-search > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+.sg-floating .sg-character-groups {
+  margin: 12px 0;
+}
+.sg-floating .sg-story-actions {
+  margin: 14px 0 18px;
+}
+.sg-story-actions > summary {
+  color: var(--sg-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 6px 0;
+}
+.sg-story-actions > .sg-toolbar {
+  margin: 12px 0;
+}
+.sg-story-actions > .sg-button {
+  margin-bottom: 12px;
+}
+.sg-floating .sg-tabs {
+  gap: 0;
+  justify-content: space-between;
+  margin: 18px 0;
+}
+.sg-floating .sg-tabs .sg-button {
+  padding: 8px;
+  font-size: 13px;
+}
+.sg-floating .sg-event-row {
+  padding: 16px 0;
+}
+.sg-floating .sg-event-row p {
+  line-height: 1.85;
 }
 @media (prefers-reduced-motion: reduce) {
   .sg-panel *,
