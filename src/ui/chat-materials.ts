@@ -25,6 +25,18 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
       }
     }
     const info = el('p', 'sg-muted');
+    const scope = el('select');
+    scope.setAttribute('aria-label', '整理消息来源');
+    for (const [value, label] of [
+      ['assistant', '仅 AI 回复（默认）'],
+      ['all', '全部对话（含玩家发言）'],
+    ] as const) {
+      const option = el('option', '', label);
+      option.value = value;
+      scope.append(option);
+    }
+    const scopeLabel = el('label', 'sg-field');
+    scopeLabel.append(el('span', '', '整理消息来源'), scope);
     const sourceList = el('div', 'sg-chat-message-list');
     const results = el('div', 'sg-chat-draft-list');
     const summary = el('p', 'sg-chat-selection');
@@ -96,13 +108,14 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
         if (busy) throw new Error('请先取消或等待当前整理结束');
         const next = app.read(Number(start.input.value), Number(end.input.value));
         capture = next;
-        selected = new Set(next.messages.map((m) => m.number));
+        const visible = next.messages.filter((m) => scope.value === 'all' || m.role === 'character');
+        selected = new Set(visible.map((m) => m.number));
         resetResults();
         sourceList.replaceChildren();
-        for (const m of next.messages) {
+        for (const m of visible) {
           const row = el('section', 'sg-chat-message');
           const include = check(
-            `选择第${m.number}条 · ${m.role === 'user' ? '玩家' : '角色'}`,
+            `选择第${m.number}条 · ${m.role === 'user' ? '玩家' : 'AI回复'}`,
             true,
             (yes) => {
               if (yes) selected.add(m.number);
@@ -123,9 +136,9 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
         previewCount++;
         updateSummary();
         message(
-          next.messages.length
-            ? `已刷新第${previewCount}次预览：第${start.input.value}–${end.input.value}条，载入${next.messages.length}条有效消息。系统和空消息已排除。`
-            : '此范围没有可整理消息，系统和空消息已排除。',
+          visible.length
+            ? `已刷新第${previewCount}次预览：第${start.input.value}–${end.input.value}条，载入${visible.length}条${scope.value === 'all' ? '对话消息' : 'AI回复'}。${scope.value === 'all' ? '' : '玩家发言不参与整理和导出。'}系统和空消息已排除。`
+            : `此范围没有可整理的${scope.value === 'all' ? '消息' : 'AI回复'}，请调整范围。`,
         );
       } catch (error) {
         capture = undefined;
@@ -315,6 +328,9 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
         message('消息范围已调整，请重新预览。');
       });
     const range = el('div', 'sg-material-controls sg-chat-range');
+    scope.addEventListener('change', () => {
+      if (!busy) preview.click();
+    });
     range.append(start.root, end.root, preview);
     const actions = el('div', 'sg-toolbar');
     actions.append(generate, cancel, saveArchive, exportChat, button('排查日志', openDiagnostics));
@@ -325,6 +341,7 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
         '仅整理成年角色的非露骨日常与恋爱素材。先选择当前聊天消息，点击整理后会发送至酒馆当前模型；本扩展不主动附带其他聊天、世界书或角色卡；宿主及其他插件可能按各自设置处理提示。草稿采用前不改变故事或聊天。关闭、切换或修改聊天使旧结果失效。',
       ),
       info,
+      scopeLabel,
       range,
       sourceList,
       summary,

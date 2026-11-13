@@ -62,11 +62,30 @@ test('打开即预览且不调用模型，等待有秒数，窗口内可看日�
   await expect(page.getByRole('button', { name: '用当前模型整理' })).toBeEnabled();
 });
 
+test('默认只导出AI回复，切换全部对话后包含玩家，切回后排除', async ({ page }) => {
+  await prepare(page);
+  const scope = page.getByRole('combobox', { name: '整理消息来源' });
+  await expect(scope).toHaveValue('assistant');
+  await expect(page.locator('.sg-chat-selection')).toContainText('选中1条');
+  await scope.selectOption('all');
+  await expect(page.getByLabel('选择第1条 · 玩家')).toBeChecked();
+  await expect(page.locator('.sg-chat-selection')).toContainText('选中2条');
+  await scope.selectOption('assistant');
+  await expect(page.getByLabel('选择第1条 · 玩家')).toHaveCount(0);
+  const pending = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出所选聊天JSON' }).click();
+  const path = await (await pending).path();
+  if (!path) throw new Error('缺少导出文件');
+  const data = JSON.parse(await readFile(path, 'utf8')) as { messages: { number: number; role: string }[] };
+  expect(data.messages.map((message) => message.number)).toEqual([3]);
+  expect(data.messages[0]?.role).toBe('character');
+});
+
 test('所选聊天由当前模型整理，预览编辑后保存并回看消息来源', async ({ page }) => {
   await prepare(page);
-  await expect(page.locator('.sg-chat-message')).toHaveCount(2);
+  await expect(page.locator('.sg-chat-message')).toHaveCount(1);
   await expect(page.locator('.sg-chat-message img')).toHaveCount(0);
-  await page.getByLabel('选择第1条 · 玩家').uncheck();
+  await expect(page.getByLabel('选择第1条 · 玩家')).toHaveCount(0);
   await page.getByRole('button', { name: '用当前模型整理' }).click();
   await expect(page.locator('.sg-chat-draft')).toHaveCount(1);
   const prompt = await page.evaluate(() => (window as unknown as { testPrompt: string }).testPrompt);

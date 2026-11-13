@@ -4499,7 +4499,7 @@ function diagnosticReport() {
   return {
     format: "story-guide-diagnostics",
     schemaVersion: 1,
-    version: "0.4.3",
+    version: "0.4.4",
     modelSource: "SillyTavern.getContext().generateRaw",
     retention: "\u5F53\u524D\u9875\u9762\u5185\u5B58\u6700\u8FD1100\u6761\uFF0C\u5237\u65B0\u6E05\u7A7A",
     entries: entries.map((entry) => ({ ...entry, fields: entry.fields?.slice() }))
@@ -5866,6 +5866,18 @@ function openChatMaterials(materials, saved) {
       }
     }
     const info = el("p", "sg-muted");
+    const scope = el("select");
+    scope.setAttribute("aria-label", "\u6574\u7406\u6D88\u606F\u6765\u6E90");
+    for (const [value, label] of [
+      ["assistant", "\u4EC5 AI \u56DE\u590D\uFF08\u9ED8\u8BA4\uFF09"],
+      ["all", "\u5168\u90E8\u5BF9\u8BDD\uFF08\u542B\u73A9\u5BB6\u53D1\u8A00\uFF09"]
+    ]) {
+      const option = el("option", "", label);
+      option.value = value;
+      scope.append(option);
+    }
+    const scopeLabel = el("label", "sg-field");
+    scopeLabel.append(el("span", "", "\u6574\u7406\u6D88\u606F\u6765\u6E90"), scope);
     const sourceList = el("div", "sg-chat-message-list");
     const results = el("div", "sg-chat-draft-list");
     const summary = el("p", "sg-chat-selection");
@@ -5924,13 +5936,14 @@ function openChatMaterials(materials, saved) {
         if (busy) throw new Error("\u8BF7\u5148\u53D6\u6D88\u6216\u7B49\u5F85\u5F53\u524D\u6574\u7406\u7ED3\u675F");
         const next = app.read(Number(start.input.value), Number(end.input.value));
         capture = next;
-        selected = new Set(next.messages.map((m) => m.number));
+        const visible = next.messages.filter((m) => scope.value === "all" || m.role === "character");
+        selected = new Set(visible.map((m) => m.number));
         resetResults();
         sourceList.replaceChildren();
-        for (const m of next.messages) {
+        for (const m of visible) {
           const row = el("section", "sg-chat-message");
           const include = check(
-            `\u9009\u62E9\u7B2C${m.number}\u6761 \xB7 ${m.role === "user" ? "\u73A9\u5BB6" : "\u89D2\u8272"}`,
+            `\u9009\u62E9\u7B2C${m.number}\u6761 \xB7 ${m.role === "user" ? "\u73A9\u5BB6" : "AI\u56DE\u590D"}`,
             true,
             (yes) => {
               if (yes) selected.add(m.number);
@@ -5951,7 +5964,7 @@ function openChatMaterials(materials, saved) {
         previewCount++;
         updateSummary();
         message(
-          next.messages.length ? `\u5DF2\u5237\u65B0\u7B2C${previewCount}\u6B21\u9884\u89C8\uFF1A\u7B2C${start.input.value}\u2013${end.input.value}\u6761\uFF0C\u8F7D\u5165${next.messages.length}\u6761\u6709\u6548\u6D88\u606F\u3002\u7CFB\u7EDF\u548C\u7A7A\u6D88\u606F\u5DF2\u6392\u9664\u3002` : "\u6B64\u8303\u56F4\u6CA1\u6709\u53EF\u6574\u7406\u6D88\u606F\uFF0C\u7CFB\u7EDF\u548C\u7A7A\u6D88\u606F\u5DF2\u6392\u9664\u3002"
+          visible.length ? `\u5DF2\u5237\u65B0\u7B2C${previewCount}\u6B21\u9884\u89C8\uFF1A\u7B2C${start.input.value}\u2013${end.input.value}\u6761\uFF0C\u8F7D\u5165${visible.length}\u6761${scope.value === "all" ? "\u5BF9\u8BDD\u6D88\u606F" : "AI\u56DE\u590D"}\u3002${scope.value === "all" ? "" : "\u73A9\u5BB6\u53D1\u8A00\u4E0D\u53C2\u4E0E\u6574\u7406\u548C\u5BFC\u51FA\u3002"}\u7CFB\u7EDF\u548C\u7A7A\u6D88\u606F\u5DF2\u6392\u9664\u3002` : `\u6B64\u8303\u56F4\u6CA1\u6709\u53EF\u6574\u7406\u7684${scope.value === "all" ? "\u6D88\u606F" : "AI\u56DE\u590D"}\uFF0C\u8BF7\u8C03\u6574\u8303\u56F4\u3002`
         );
       } catch (error) {
         capture = void 0;
@@ -6133,6 +6146,9 @@ function openChatMaterials(materials, saved) {
         message("\u6D88\u606F\u8303\u56F4\u5DF2\u8C03\u6574\uFF0C\u8BF7\u91CD\u65B0\u9884\u89C8\u3002");
       });
     const range = el("div", "sg-material-controls sg-chat-range");
+    scope.addEventListener("change", () => {
+      if (!busy) preview.click();
+    });
     range.append(start.root, end.root, preview);
     const actions = el("div", "sg-toolbar");
     actions.append(generate, cancel, saveArchive, exportChat, button("\u6392\u67E5\u65E5\u5FD7", openDiagnostics));
@@ -6143,6 +6159,7 @@ function openChatMaterials(materials, saved) {
         "\u4EC5\u6574\u7406\u6210\u5E74\u89D2\u8272\u7684\u975E\u9732\u9AA8\u65E5\u5E38\u4E0E\u604B\u7231\u7D20\u6750\u3002\u5148\u9009\u62E9\u5F53\u524D\u804A\u5929\u6D88\u606F\uFF0C\u70B9\u51FB\u6574\u7406\u540E\u4F1A\u53D1\u9001\u81F3\u9152\u9986\u5F53\u524D\u6A21\u578B\uFF1B\u672C\u6269\u5C55\u4E0D\u4E3B\u52A8\u9644\u5E26\u5176\u4ED6\u804A\u5929\u3001\u4E16\u754C\u4E66\u6216\u89D2\u8272\u5361\uFF1B\u5BBF\u4E3B\u53CA\u5176\u4ED6\u63D2\u4EF6\u53EF\u80FD\u6309\u5404\u81EA\u8BBE\u7F6E\u5904\u7406\u63D0\u793A\u3002\u8349\u7A3F\u91C7\u7528\u524D\u4E0D\u6539\u53D8\u6545\u4E8B\u6216\u804A\u5929\u3002\u5173\u95ED\u3001\u5207\u6362\u6216\u4FEE\u6539\u804A\u5929\u4F7F\u65E7\u7ED3\u679C\u5931\u6548\u3002"
       ),
       info,
+      scopeLabel,
       range,
       sourceList,
       summary,
