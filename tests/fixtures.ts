@@ -1,0 +1,63 @@
+export const source = {
+  id: 's1',
+  label: '钟楼街 / 事件',
+  text: '钟楼街发生失踪案。',
+  disabled: false,
+  fingerprint: 'v1',
+};
+export function fixture() {
+  return {
+    schemaVersion: 1,
+    id: 'story1',
+    revision: 1,
+    characterKey: 'alice.png',
+    title: '旧城调查',
+    summary: '沿着线索探索。',
+    mode: 'create',
+    status: 'draft',
+    createdAt: '2026-11-13',
+    sources: [source],
+    nodes: [
+      {
+        id: 'a',
+        type: 'start',
+        title: '抵达',
+        summary: '进入旧城',
+        location: '钟楼街',
+        characters: ['艾琳'],
+        time: '开局',
+        chapter: '共同线',
+        provenance: 'original',
+        refs: [],
+        spoiler: false,
+        locked: false,
+      },
+      {
+        id: 'b',
+        type: 'ending',
+        title: '秘密结局',
+        summary: '发现真相',
+        location: '钟楼街',
+        characters: ['艾琳'],
+        time: '未来',
+        chapter: '共同线',
+        provenance: 'original',
+        refs: [],
+        spoiler: true,
+        locked: false,
+      },
+    ],
+    edges: [
+      {
+        id: 'e1',
+        from: 'a',
+        to: 'b',
+        label: '继续调查',
+        condition: '获得线索',
+        provenance: 'original',
+        refs: [],
+      },
+    ],
+    positions: {},
+  };
+}

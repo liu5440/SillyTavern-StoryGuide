@@ -1,0 +1,10 @@
+{
+  "display_name": "酒馆剧情指南",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "js": "dist/index.js",
+  "css": "style.css",
+  "author": "Story Guide contributors",
+  "version": "0.1.0"
+}

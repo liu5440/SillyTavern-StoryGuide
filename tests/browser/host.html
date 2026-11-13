@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><link
+    rel="stylesheet"
+    href="/style.css"
+  /><title>宿主接口测试夹具</title>
+  <body style="background: #303846">
+    <div id="extensions_settings2"></div>
+    <script>
+      const handlers = new Map();
+      window.testDraft = {
+        title: '旧城来信',
+        summary: '未来将发现隐藏的信件。',
+        nodes: [
+          {
+            id: 'a',
+            type: 'start',
+            title: '抵达钟楼街',
+            summary: '<img src=x onerror=alert(1)> 与艾琳在街口见面。',
+            location: '钟楼街',
+            characters: ['艾琳'],
+            time: '开局',
+            chapter: '共同线',
+            provenance: 'original',
+            refs: [],
+            spoiler: false,
+            locked: false,
+          },
+          {
+            id: 'b',
+            type: 'ending',
+            title: '隐藏的真相',
+            summary: '找到旧信。',
+            location: '钟楼街',
+            characters: ['艾琳'],
+            time: '未来',
+            chapter: '共同线',
+            provenance: 'original',
+            refs: [],
+            spoiler: true,
+            locked: false,
+          },
+        ],
+        edges: [
+          {
+            id: 'e',
+            from: 'a',
+            to: 'b',
+            label: '一同调查',
+            condition: '取得信任',
+            provenance: 'original',
+            refs: [],
+          },
+        ],
+      };
+      window.testContext = {
+        characterId: 0,
+        characters: [{ avatar: 'test.png', name: '艾琳', description: '一位住在旧城的调查员。' }],
+        getCurrentChatId: () => 'test-chat',
+        chat: [],
+        getWorldInfoNames: () => [],
+        onlineStatus: 'connected',
+        mainApi: 'test',
+        generateRaw: async () => JSON.stringify(window.testDraft),
+        eventTypes: {
+          CHAT_CHANGED: 'chat',
+          MESSAGE_EDITED: 'edit',
+          MESSAGE_DELETED: 'delete',
+          MESSAGE_SWIPED: 'swipe',
+        },
+        eventSource: {
+          on: (key, fn) => handlers.set(key, fn),
+          removeListener: (key) => handlers.delete(key),
+        },
+      };
+      window.SillyTavern = { getContext: () => window.testContext };
+      window.testSwitch = () => handlers.get('chat')?.();
+    </script>
+    <script type="module" src="/dist/index.js"></script>
+  </body>
+</html>

@@ -1,0 +1,919 @@
+import { GuideController, decodeImport } from '../application/controller';
+import { GenerationError, splitSources } from '../application/generate';
+import {
+  parseStory,
+  validateGraph,
+  visibleStory,
+  type Story,
+  type StoryNode,
+  type Edge,
+  type RunState,
+} from '../domain/story';
+import type { ContextSnapshot } from '../host/tavern';
+import { el, button, check, field, showModal, download } from './dom';
+import { graph } from './graph';
+
+const provenance = { explicit: '原文明确', inferred: '模型推断', original: '原创故事', user: '用户设定' };
+const kinds = { start: '开场', event: '事件', choice: '选择', ending: '结局' };
+
+/** 面板只编排输入和展示，模型与存储操作均交给应用用例。 */
+export class GuidePanel {
+  private dialog = el('dialog', 'sg-panel');
+  private status = el('p', 'sg-status', '准备读取角色资料…');
+  private body = el('div', 'sg-body');
+  private sidebar = el('aside', 'sg-sidebar');
+  private content = el('main', 'sg-content');
+  private output = el('div', 'sg-output');
+  private title = el('h2', '', '剧情指南');
+  private snapshot?: ContextSnapshot;
+  private story?: Story;
+  private stories: Story[] = [];
+  private run?: RunState;
+  private undo: RunState[] = [];
+  private spoilers = false;
+  private dirty = false;
+  private tab = '概览';
+  private query = '';
+  private busy = false;
+  private abort?: AbortController;
+  private selectedSources = new Set<string>();
+  private loadId = 0;
+  private returnFocus?: HTMLElement;
+  private unsubscribe: () => void;
+  constructor(private app: GuideController) {
+    const header = el('header', 'sg-header');
+    const heading = el('div');
+    heading.append(el('span', 'sg-brand', 'STORY GUIDE / 剧情手册'), this.title);
+    header.append(
+      heading,
+      button('关闭', () => {
+        if (!this.dirty || confirm('草稿尚未保存，关闭后更改不会保留。继续？')) this.dialog.close();
+      }),
+    );
+    this.status.setAttribute('role', 'status');
+    this.status.setAttribute('aria-live', 'polite');
+    this.body.append(this.sidebar, this.content);
+    this.dialog.append(header, this.status, this.body);
+    this.dialog.addEventListener('cancel', (event) => {
+      if (this.dirty && !confirm('草稿尚未保存，关闭后更改不会保留。继续？')) event.preventDefault();
+      else this.abort?.abort();
+    });
+    this.dialog.addEventListener('close', () => {
+      this.abort?.abort();
+      this.closeEditors();
+      this.returnFocus?.focus();
+    });
+    document.body.append(this.dialog);
+    this.unsubscribe = this.app.host.subscribe(
+      () => {
+        this.abort?.abort();
+        this.loadId++;
+        this.closeEditors();
+        if (this.dialog.open) {
+          this.story = undefined;
+          this.run = undefined;
+          this.content.replaceChildren();
+          this.sidebar.replaceChildren();
+          this.message('聊天已切换，正在重新读取…');
+          void this.safe(() => this.load());
+        }
+      },
+      () => {
+        if (this.run) {
+          this.run.needsReview = true;
+          this.message('聊天内容已修改，本局进度需要核对；确认后可继续记录。');
+          this.renderContent();
+        }
+      },
+    );
+  }
+  destroy() {
+    this.abort?.abort();
+    this.unsubscribe();
+    this.dialog.remove();
+  }
+  private closeEditors() {
+    document.querySelectorAll<HTMLDialogElement>('.sg-modal').forEach((dialog) => dialog.close());
+  }
+  private guardView(snapshot: ContextSnapshot) {
+    this.app.guard(snapshot);
+    if (snapshot !== this.snapshot || !this.dialog.open) throw new Error('页面已重新读取，已丢弃旧操作结果');
+  }
+  open() {
+    if (this.dialog.open) return;
+    this.returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+    this.dialog.showModal();
+    void this.safe(() => this.load());
+  }
+  private message(text: string, error = false) {
+    this.status.textContent = text;
+    this.status.classList.toggle('sg-error', error);
+  }
+  private async safe(action: () => void | Promise<void>) {
+    try {
+      await action();
+    } catch (error) {
+      this.message(error instanceof Error ? error.message : '操作失败，请重试', true);
+    }
+  }
+  private async load(books?: string[]) {
+    const sequence = ++this.loadId;
+    const { snapshot, stories } = await this.app.load(books);
+    if (sequence !== this.loadId || !this.dialog.open) return;
+    this.snapshot = snapshot;
+    this.stories = stories;
+    this.story = stories[0];
+    this.selectedSources = new Set(snapshot.sources.filter((s) => !s.disabled).map((s) => s.id));
+    this.dirty = false;
+    this.undo = [];
+    this.spoilers = false;
+    this.run = this.story ? await this.app.run(snapshot, this.story) : undefined;
+    if (sequence !== this.loadId) return;
+    this.title.textContent = `${snapshot.characterName}的剧情指南`;
+    await this.renderSidebar();
+    this.renderContent();
+    this.message(
+      `${snapshot.sources.length} 条资料已读取 · 使用酒馆当前 ${snapshot.api} 连接生成 · 存档仅在当前浏览器`,
+    );
+  }
+  private async renderSidebar() {
+    if (!this.snapshot) return;
+    this.sidebar.replaceChildren();
+    const snapshot = this.snapshot;
+    this.sidebar.append(
+      el('h3', '', '准备故事'),
+      el('p', 'sg-muted', '整理已有设定，或为角色写一段可探索的故事。'),
+    );
+    const mode = el('select');
+    mode.setAttribute('aria-label', '生成模式');
+    for (const [value, label] of [
+      ['analyze', '解析原设定'],
+      ['create', '创作新故事'],
+    ]) {
+      const option = el('option', '', label);
+      option.value = value ?? '';
+      mode.append(option);
+    }
+    mode.value =
+      snapshot.bookNames.length || snapshot.sources.some((s) => s.id.startsWith('embedded:'))
+        ? 'analyze'
+        : 'create';
+    const brief = field('故事意向（可选）', '', true);
+    brief.input.placeholder = '例如：慢热悬疑，先共同调查，再分成人物路线。也可补充人物设定。';
+    const options = await this.app.host.bookOptions();
+    if (snapshot !== this.snapshot) return;
+    const books = el('details', 'sg-details');
+    books.append(el('summary', '', '选择世界书'));
+    const selectedBooks = new Set(snapshot.bookNames);
+    for (const name of options.all)
+      books.append(
+        check(name, selectedBooks.has(name), (yes) => {
+          if (yes) selectedBooks.add(name);
+          else selectedBooks.delete(name);
+        }).root,
+      );
+    if (!options.all.length) books.append(el('p', 'sg-muted', '没有世界书也能创作故事。'));
+    books.append(
+      button('读取所选世界书', () =>
+        this.safe(async () => {
+          if (this.busy) throw new Error('请先结束当前生成');
+          if (this.dirty && !confirm('有未保存草稿，重新读取会丢弃更改。继续？')) return;
+          await this.load([...selectedBooks]);
+        }),
+      ),
+    );
+    const sourceList = el('details', 'sg-details');
+    sourceList.append(el('summary', '', `分析资料（${snapshot.sources.length} 条）`));
+    const list = el('div', 'sg-source-list');
+    for (const source of snapshot.sources)
+      list.append(
+        check(
+          `${source.label}${source.disabled ? '（原条目已禁用）' : ''}`,
+          this.selectedSources.has(source.id),
+          (yes) => {
+            if (yes) this.selectedSources.add(source.id);
+            else this.selectedSources.delete(source.id);
+          },
+        ).root,
+      );
+    sourceList.append(list);
+    const generate = button(
+      '生成故事草稿',
+      () =>
+        this.safe(async () => {
+          if (this.busy) throw new Error('已有生成任务，请等待或取消');
+          if (this.dirty && !confirm('有未保存更改，生成新草稿前是否继续？旧存档不会覆盖。')) return;
+          const selected = snapshot.sources.filter((s) => this.selectedSources.has(s.id));
+          const count = splitSources(selected).length;
+          if (
+            !confirm(
+              `将发送 ${selected.length} 条所选资料（${selected.reduce((n, s) => n + s.text.length, 0)} 字符）至酒馆当前模型。${mode.value === 'analyze' ? `预计 ${count}${count > 1 ? ' + 1 次合并' : ''} 次请求` : '预计 1 次请求'}，校验失败可能额外修复一次。继续？`,
+            )
+          )
+            return;
+          this.busy = true;
+          generate.disabled = true;
+          this.abort = new AbortController();
+          const timeout = setTimeout(() => this.abort?.abort(), 180000);
+          try {
+            const story = await this.app.generate(
+              {
+                snapshot: { ...snapshot, sources: selected },
+                mode: mode.value === 'create' ? 'create' : 'analyze',
+                brief: brief.input.value,
+              },
+              this.abort.signal,
+              (text) => this.message(text),
+            );
+            this.guardView(snapshot);
+            const run = await this.app.run(snapshot, story);
+            this.guardView(snapshot);
+            this.story = story;
+            this.run = run;
+            this.dirty = true;
+            this.message('草稿已生成，尚未保存或采用。打开完整攻略可编辑事件与分支。');
+            this.renderContent();
+          } catch (error) {
+            if (
+              error instanceof GenerationError &&
+              error.partials.length &&
+              this.app.host.isCurrent(snapshot)
+            ) {
+              for (const partial of error.partials)
+                await this.app.repository.saveStory(snapshot.user, {
+                  ...partial,
+                  title: `部分结果：${partial.title}`,
+                });
+              const stories = await this.app.repository.loadStories(snapshot.user, snapshot.characterKey);
+              this.guardView(snapshot);
+              this.stories = stories;
+              this.renderContent();
+            }
+            throw error;
+          } finally {
+            clearTimeout(timeout);
+            this.busy = false;
+            this.abort = undefined;
+            generate.disabled = false;
+          }
+        }),
+      'sg-primary',
+    );
+    const cancel = button('取消生成', () => {
+      this.abort?.abort();
+      this.message('已请求取消。酒馆模型请求可能继续执行和计费，返回内容不会采用。');
+    });
+    this.sidebar.append(mode, brief.root, books, sourceList, generate, cancel);
+    const footer = el('div', 'sg-sidebar-footer');
+    const upload = el('input');
+    upload.type = 'file';
+    upload.accept = '.json,application/json';
+    upload.hidden = true;
+    upload.addEventListener(
+      'change',
+      () =>
+        void this.safe(async () => {
+          const file = upload.files?.[0];
+          if (!file) return;
+          if (file.size > 8_000_000) throw new Error('文件超过 8 MB');
+          const raw = await file.text();
+          this.guardView(snapshot);
+          const decoded = decodeImport(raw);
+          const preview = decoded.story;
+          const errors = validateGraph(preview);
+          if (errors.length) throw new Error(errors.join('；'));
+          showModal('导入预览', (body, close) => {
+            const restore = check('同时恢复备份进度到当前聊天（需重新核对）', false);
+            if (decoded.run) body.append(restore.root);
+            body.append(
+              el('h3', '', preview.title),
+              el(
+                'p',
+                '',
+                `${preview.nodes.length} 个节点、${preview.edges.length} 条连线。将作为当前角色的新草稿保存，不覆盖已有版本。`,
+              ),
+              button(
+                '另存为新故事',
+                () =>
+                  this.safe(async () => {
+                    const imported = await this.app.importStory(snapshot, raw);
+                    const run =
+                      restore.input.checked && decoded.run
+                        ? await this.app.restoreRun(snapshot, imported, decoded.run)
+                        : await this.app.run(snapshot, imported);
+                    const stories = await this.app.repository.loadStories(
+                      snapshot.user,
+                      snapshot.characterKey,
+                    );
+                    this.guardView(snapshot);
+                    this.story = imported;
+                    this.run = run;
+                    this.dirty = false;
+                    this.stories = stories;
+                    close();
+                    this.renderContent();
+                    this.message('导入副本已保存');
+                  }),
+                'sg-primary',
+              ),
+            );
+          });
+          upload.value = '';
+        }),
+    );
+    footer.append(
+      button('导入故事 JSON', () => upload.click()),
+      upload,
+      el('p', 'sg-muted', '生成只产生草稿，不会发送聊天或改写角色卡。换浏览器前请导出备份。'),
+    );
+    this.sidebar.append(footer);
+  }
+  private renderContent() {
+    this.content.replaceChildren();
+    const snapshot = this.snapshot;
+    if (!snapshot) return;
+    const actions = el('div', 'sg-toolbar');
+    if (this.stories.length) {
+      const select = el('select');
+      select.setAttribute('aria-label', '故事存档版本');
+      this.stories.forEach((s, i) => {
+        const option = el(
+          'option',
+          '',
+          `${s.title} / v${s.revision} ${s.status === 'adopted' ? '已采用' : '草稿'}`,
+        );
+        option.value = String(i);
+        option.selected = this.story?.id === s.id && this.story.revision === s.revision;
+        select.append(option);
+      });
+      if (this.dirty) {
+        const option = el('option', '', '当前未保存草稿');
+        option.value = '-1';
+        option.selected = true;
+        select.append(option);
+      }
+      select.addEventListener(
+        'change',
+        () =>
+          void this.safe(async () => {
+            if (this.dirty && !confirm('切换会丢弃当前未保存更改。继续？')) {
+              this.renderContent();
+              return;
+            }
+            const story = this.stories[Number(select.value)];
+            if (!story) return;
+            const run = await this.app.run(snapshot, story);
+            this.guardView(snapshot);
+            this.story = story;
+            this.run = run;
+            this.dirty = false;
+            this.undo = [];
+            this.renderContent();
+          }),
+      );
+      actions.append(select);
+    }
+    actions.append(
+      check('完整攻略（含剧透）', this.spoilers, (yes) => {
+        this.spoilers = yes;
+        this.renderContent();
+      }).root,
+    );
+    this.content.append(actions);
+    const story = this.story;
+    if (!story) {
+      const empty = el('div', 'sg-welcome');
+      empty.append(
+        el('span', 'sg-book-mark', '✦'),
+        el('h2', '', '先读懂这个世界，再走进故事'),
+        el(
+          'p',
+          '',
+          '选择左侧资料，解析角色已有的经历与路线。没有世界书？也可以从人物出发，创作共同线、分支和结局。',
+        ),
+        el('p', 'sg-muted', '生成后先审阅草稿；日常游玩默认隐藏未来情节。'),
+      );
+      this.content.append(empty);
+      return;
+    }
+    const heading = el('div', 'sg-story-heading');
+    heading.append(
+      el('h2', '', story.title),
+      el(
+        'span',
+        'sg-badge',
+        `${story.mode === 'analyze' ? '原设定解析' : '故事创作'} / ${this.dirty ? '未保存' : story.status === 'adopted' ? '已采用' : '草稿'} v${story.revision}`,
+      ),
+    );
+    this.content.append(heading);
+    const saveActions = el('div', 'sg-toolbar');
+    saveActions.append(
+      button('保存草稿版本', () =>
+        this.safe(async () => {
+          const saved = await this.app.save(snapshot, story);
+          const stories = await this.app.repository.loadStories(snapshot.user, snapshot.characterKey);
+          const run = await this.app.run(snapshot, saved);
+          this.guardView(snapshot);
+          this.story = saved;
+          this.dirty = false;
+          this.stories = stories;
+          this.run = run;
+          this.renderContent();
+          this.message('草稿版本已保存到当前浏览器');
+        }),
+      ),
+      button(
+        '采用此故事',
+        () =>
+          this.safe(async () => {
+            const adopted = await this.app.adopt(snapshot, story);
+            const stories = await this.app.repository.loadStories(snapshot.user, snapshot.characterKey);
+            const run = await this.app.run(snapshot, adopted);
+            this.guardView(snapshot);
+            this.story = adopted;
+            this.dirty = false;
+            this.stories = stories;
+            this.run = run;
+            this.renderContent();
+            this.message('故事已采用，可以手动记录本局进度；没有自动注入聊天。');
+          }),
+        'sg-primary',
+      ),
+      button('导出故事', () => download(`剧情指南-${story.id}-v${story.revision}.json`, story)),
+    );
+    saveActions.append(
+      button('备份故事与本局进度', () =>
+        download(`剧情备份-${story.id}.json`, {
+          format: 'story-guide-backup',
+          schemaVersion: 1,
+          story,
+          ...(this.run ? { run: this.run } : {}),
+        }),
+      ),
+    );
+    this.content.append(saveActions);
+    if (this.run?.needsReview)
+      this.content.append(el('p', 'sg-warning', '聊天内容已变动，本局进度待核对。确认节点后可继续记录。'));
+    if (
+      story.sources.some((old) => {
+        const source = snapshot.sources.find((s) => s.id === old.id);
+        return !source || source.fingerprint !== old.fingerprint;
+      })
+    )
+      this.content.append(
+        el(
+          'p',
+          'sg-warning',
+          '原资料已变化或不在当前读取范围。此版本保留旧来源快照；重新生成不会覆盖旧存档。',
+        ),
+      );
+    const nav = el('nav', 'sg-tabs');
+    for (const label of ['概览', '事件', '地点', '路线图'])
+      nav.append(
+        button(
+          label,
+          () => {
+            this.tab = label;
+            this.renderContent();
+          },
+          this.tab === label ? 'sg-active' : '',
+        ),
+      );
+    this.content.append(nav);
+    const search = field('搜索可见事件、人物、地点', this.query);
+    search.input.addEventListener('input', () => {
+      this.query = search.input.value;
+      this.renderOutput();
+    });
+    this.content.append(search.root);
+    this.output = el('div', 'sg-output');
+    this.content.append(this.output);
+    this.renderOutput();
+  }
+  private renderOutput() {
+    this.output.replaceChildren();
+    if (!this.story) return;
+    const view = visibleStory(this.story, this.run, this.spoilers);
+    const nodes = view.nodes.filter((n) =>
+      `${n.title} ${n.summary} ${n.location} ${n.characters.join(' ')}`.includes(this.query),
+    );
+    if (this.tab === '概览') {
+      this.output.append(el('p', 'sg-synopsis', view.summary));
+      if (this.run) {
+        const current = view.nodes.find((n) => n.id === this.run?.current);
+        this.output.append(
+          el('h3', '', '这一次，从这里开始'),
+          el('p', '', current ? `当前：${current.title}` : '尚未设置当前事件'),
+        );
+        const destinations = view.edges.filter((e) => e.from === this.run?.current);
+        for (const edge of destinations)
+          this.output.append(
+            el('p', 'sg-next', `${edge.label || '继续探索'} · 条件：${edge.condition || '需玩家判断'}`),
+          );
+        this.output.append(
+          button('查看互动建议', () => this.suggestions(view)),
+          button('本局选择与变量', () => this.runEditor()),
+          button('撤销上次进度', () =>
+            this.safe(async () => {
+              const old = this.undo.at(-1),
+                snapshot = this.snapshot;
+              if (!old || !snapshot) return;
+              await this.app.saveRun(snapshot, old);
+              this.guardView(snapshot);
+              this.undo.pop();
+              this.run = old;
+              this.renderContent();
+            }),
+          ),
+        );
+      }
+      this.output.append(el('h3', '', '可探索事件'));
+    }
+    if (this.tab === '路线图') {
+      this.output.append(
+        graph(
+          {
+            ...view,
+            nodes,
+            edges: view.edges.filter(
+              (e) => nodes.some((n) => n.id === e.from) && nodes.some((n) => n.id === e.to),
+            ),
+          },
+          this.run?.current ?? '',
+          (id) => this.nodeDetail(id),
+          (id) => this.edgeDetail(id),
+          this.spoilers
+            ? (id, x, y) => {
+                if (this.story) {
+                  this.story.positions[id] = { x, y };
+                  this.dirty = true;
+                  this.message('布局已调整，点击保存草稿版本可持久保存');
+                }
+              }
+            : undefined,
+        ),
+      );
+      if (this.spoilers)
+        this.output.append(
+          button('添加事件', () => this.nodeDetail()),
+          button('添加连线', () => this.edgeDetail()),
+        );
+      return;
+    }
+    if (this.tab === '地点') {
+      const locations = [...new Set(nodes.map((n) => n.location || '未标地点'))];
+      for (const location of locations) {
+        const group = el('section', 'sg-place');
+        group.append(el('h3', '', location));
+        for (const node of nodes.filter((n) => (n.location || '未标地点') === location))
+          group.append(this.nodeRow(node));
+        this.output.append(group);
+      }
+    } else for (const node of nodes) this.output.append(this.nodeRow(node));
+    if (!nodes.length)
+      this.output.append(el('p', 'sg-empty', '没有匹配的可见事件。未来情节可在完整攻略中查看。'));
+    if (this.spoilers) this.output.append(button('添加事件', () => this.nodeDetail()));
+  }
+  private nodeRow(node: StoryNode): HTMLElement {
+    const row = button('', () => this.nodeDetail(node.id), 'sg-event-row');
+    row.append(
+      el('span', 'sg-node-type', `${kinds[node.type]} · ${node.time || '时间未知'}`),
+      el('strong', '', node.title),
+      el('span', 'sg-event-summary', node.summary),
+      el(
+        'small',
+        'sg-muted',
+        `${node.location || '地点未知'} · ${provenance[node.provenance]}${this.run?.states[node.id] === 'done' ? ' · 已完成' : ''}`,
+      ),
+    );
+    return row;
+  }
+  private suggestions(view: Story) {
+    const node = view.nodes.find((n) => n.id === this.run?.current) ?? view.nodes[0];
+    showModal('互动建议', (body) => {
+      if (!node) {
+        body.append(el('p', '', '请先设置一个可见的当前事件。'));
+        return;
+      }
+      const advice = `可以围绕「${node.title}」询问${node.characters.join('、') || '角色'}的想法${node.location ? `，或提议一起探索${node.location}` : ''}。当前情境：${node.summary}`;
+      body.append(
+        el('p', 'sg-badge', '规则生成的互动建议 · 不保证触发事件'),
+        el('p', '', advice),
+        button('复制建议', () =>
+          this.safe(async () => {
+            await navigator.clipboard.writeText(advice);
+            this.message('建议已复制，没有发送聊天');
+          }),
+        ),
+      );
+      for (const edge of view.edges.filter((e) => e.from === node.id))
+        body.append(el('p', '', `${edge.label}：${edge.condition || '需玩家判断'}`));
+    });
+  }
+  private runEditor() {
+    const run = this.run,
+      story = this.story,
+      snapshot = this.snapshot;
+    if (!run || !story || !snapshot) return;
+    showModal('本局选择与变量', (body, close) => {
+      const choices = new Set(run.choices);
+      const view = visibleStory(story, run, this.spoilers);
+      body.append(el('h3', '', '已做出的选择'));
+      for (const edge of view.edges)
+        body.append(
+          check(edge.label || '继续探索', choices.has(edge.id), (yes) => {
+            if (yes) choices.add(edge.id);
+            else choices.delete(edge.id);
+          }).root,
+        );
+      const variables = field(
+        '变量（JSON 对象，值仅支持数字、布尔或字符串）',
+        JSON.stringify(run.variables, null, 2),
+        true,
+      );
+      body.append(
+        variables.root,
+        el('p', 'sg-muted', '本版条件由玩家判断，记录变量不会自动推进事件。'),
+        button(
+          '保存本局记录',
+          () =>
+            this.safe(async () => {
+              if (story.status !== 'adopted' || this.dirty) throw new Error('请先采用故事，再记录进度');
+              const next = {
+                ...run,
+                choices: [...choices],
+                variables: JSON.parse(variables.input.value) as RunState['variables'],
+                needsReview: false,
+              };
+              await this.app.saveRun(snapshot, next);
+              this.guardView(snapshot);
+              this.undo.push(structuredClone(run));
+              this.run = next;
+              close();
+              this.renderContent();
+              this.message('本局记录已保存');
+            }),
+          'sg-primary',
+        ),
+      );
+    });
+  }
+  private nodeDetail(id?: string) {
+    const story = this.story,
+      snapshot = this.snapshot,
+      run = this.run;
+    if (!story || !snapshot) return;
+    const original = story.nodes.find((n) => n.id === id);
+    if (!this.spoilers && (!original || !visibleStory(story, this.run, false).nodes.some((n) => n.id === id)))
+      return;
+    showModal(original?.title ?? '添加事件', (body, close) => {
+      if (original && !this.spoilers) {
+        body.append(
+          el('p', 'sg-badge', provenance[original.provenance]),
+          el('p', '', original.summary),
+          el('p', '', `时间：${original.time || '未知'} · 地点：${original.location || '未知'}`),
+        );
+      } else {
+        const name = field('事件标题', original?.title ?? '新事件');
+        const summary = field('故事内容', original?.summary ?? '', true);
+        const location = field('地点', original?.location ?? '');
+        const time = field('时间（不确定请写未知）', original?.time ?? '未知');
+        const chapter = field('章节/路线', original?.chapter ?? '');
+        const characters = field('相关人物（用顿号分隔）', original?.characters.join('、') ?? '');
+        const type = el('select');
+        type.setAttribute('aria-label', '节点类型');
+        for (const [value, label] of Object.entries(kinds)) {
+          const option = el('option', '', label);
+          option.value = value;
+          type.append(option);
+        }
+        type.value = original?.type ?? 'event';
+        const hidden = check('未来事件或秘密（默认隐藏）', original?.spoiler ?? true);
+        const locked = check('锁定内容，局部生成时保留', original?.locked ?? false);
+        body.append(
+          name.root,
+          summary.root,
+          location.root,
+          time.root,
+          chapter.root,
+          characters.root,
+          type,
+          hidden.root,
+          locked.root,
+        );
+        if (original)
+          body.append(
+            button('局部重生成（预览后替换）', () =>
+              this.safe(async () => {
+                this.guardView(snapshot);
+                if (this.busy) throw new Error('请先结束当前生成任务');
+                this.busy = true;
+                this.abort = new AbortController();
+                const timer = setTimeout(() => this.abort?.abort(), 180000);
+                try {
+                  this.message('正在重新整理此节点…');
+                  const next = await this.app.regenerate(snapshot, story, original.id, this.abort.signal);
+                  this.guardView(snapshot);
+                  showModal('节点修改预览', (preview, done) => {
+                    preview.append(
+                      el('h3', '', '修改前'),
+                      el('p', '', original.summary),
+                      el('h3', '', '修改后'),
+                      el(
+                        'p',
+                        '',
+                        `${next.title}\n${next.summary}\n地点：${next.location}\n时间：${next.time}`,
+                      ),
+                      button(
+                        '替换到草稿',
+                        () =>
+                          this.safe(() => {
+                            this.guardView(snapshot);
+                            this.story = {
+                              ...story,
+                              nodes: story.nodes.map((n) => (n.id === original.id ? next : n)),
+                            };
+                            this.dirty = true;
+                            done();
+                            close();
+                            this.renderContent();
+                            this.message('节点已替换到草稿，尚未保存');
+                          }),
+                        'sg-primary',
+                      ),
+                    );
+                  });
+                } finally {
+                  clearTimeout(timer);
+                  this.busy = false;
+                  this.abort = undefined;
+                }
+              }),
+            ),
+          );
+        body.append(
+          button(
+            '更新草稿',
+            () =>
+              this.safe(() => {
+                this.guardView(snapshot);
+                const updated: StoryNode = {
+                  id: original?.id ?? crypto.randomUUID(),
+                  type: type.value as StoryNode['type'],
+                  title: name.input.value,
+                  summary: summary.input.value,
+                  location: location.input.value,
+                  time: time.input.value,
+                  chapter: chapter.input.value,
+                  characters: characters.input.value.split('、').filter(Boolean),
+                  provenance: 'user',
+                  refs: [],
+                  spoiler: hidden.input.checked,
+                  locked: locked.input.checked,
+                };
+                const copy = structuredClone(story);
+                const index = copy.nodes.findIndex((n) => n.id === updated.id);
+                if (index >= 0) copy.nodes[index] = updated;
+                else copy.nodes.push(updated);
+                this.story = parseStory(copy);
+                this.dirty = true;
+                close();
+                this.renderContent();
+                this.message('事件已更新到草稿，尚未保存');
+              }),
+            'sg-primary',
+          ),
+        );
+        if (original)
+          body.append(
+            button('删除事件及关联连线', () => {
+              if (!confirm('删除后可通过旧存档恢复，继续？')) return;
+              const copy = structuredClone(story);
+              copy.nodes = copy.nodes.filter((n) => n.id !== original.id);
+              copy.edges = copy.edges.filter((e) => e.from !== original.id && e.to !== original.id);
+              if (!copy.nodes.length) {
+                this.message('至少保留一个事件', true);
+                return;
+              }
+              this.story = copy;
+              this.dirty = true;
+              close();
+              this.renderContent();
+            }),
+          );
+      }
+      if (original) {
+        body.append(el('h3', '', '本局进度'));
+        for (const [label, state] of [
+          ['设为当前事件', 'current'],
+          ['标记已完成', 'done'],
+          ['标记跳过', 'skipped'],
+          ['重置为未发生', 'pending'],
+        ])
+          body.append(
+            button(label ?? '', () =>
+              this.safe(async () => {
+                this.guardView(snapshot);
+                if (!run) return;
+                if (this.story?.status !== 'adopted' || this.dirty)
+                  throw new Error('请先保存并采用故事，再记录本局进度');
+                const old = structuredClone(run);
+                const next = structuredClone(run);
+                if (state === 'current') next.current = original.id;
+                else next.states[original.id] = state as 'done' | 'skipped' | 'pending';
+                next.needsReview = false;
+                await this.app.saveRun(snapshot, next);
+                this.guardView(snapshot);
+                this.undo.push(old);
+                this.run = next;
+                close();
+                this.renderContent();
+                this.message('本局进度已保存');
+              }),
+            ),
+          );
+        if (this.spoilers) {
+          body.append(el('h3', '', '原文依据'));
+          if (!original.refs.length)
+            body.append(el('p', 'sg-muted', '没有原文引用。此项为推断、原创或用户设定。'));
+          for (const ref of original.refs) {
+            const source = story.sources.find((s) => s.id === ref.sourceId);
+            body.append(el('strong', '', source?.label ?? '来源缺失'), el('blockquote', '', ref.quote));
+          }
+          body.append(el('h3', '', '后续分支'));
+          for (const edge of story.edges.filter((e) => e.from === original.id))
+            body.append(
+              button(`${edge.label || '继续'} · ${edge.condition || '需玩家判断'}`, () =>
+                this.edgeDetail(edge.id),
+              ),
+            );
+        }
+      }
+    });
+  }
+  private edgeDetail(id?: string) {
+    const snapshot = this.snapshot;
+    if (!this.story || !this.spoilers || !snapshot) return;
+    const story = this.story;
+    const edge = story.edges.find((e) => e.id === id);
+    showModal('编辑分支连线', (body, close) => {
+      const from = el('select'),
+        to = el('select');
+      from.setAttribute('aria-label', '起点');
+      to.setAttribute('aria-label', '终点');
+      for (const node of story.nodes)
+        for (const select of [from, to]) {
+          const option = el('option', '', node.title);
+          option.value = node.id;
+          select.append(option);
+        }
+      from.value = edge?.from ?? story.nodes[0]?.id ?? '';
+      to.value = edge?.to ?? story.nodes[1]?.id ?? '';
+      const label = field('选择或衔接文本', edge?.label ?? '继续');
+      const condition = field('剧情条件（人工判断）', edge?.condition ?? '需玩家判断', true);
+      body.append(
+        el('p', 'sg-muted', '起点与终点决定剧情流向，条件不会执行脚本。'),
+        from,
+        to,
+        label.root,
+        condition.root,
+        button(
+          '更新连线',
+          () =>
+            this.safe(() => {
+              this.guardView(snapshot);
+              const updated: Edge = {
+                id: edge?.id ?? crypto.randomUUID(),
+                from: from.value,
+                to: to.value,
+                label: label.input.value,
+                condition: condition.input.value,
+                provenance: 'user',
+                refs: [],
+              };
+              const copy = structuredClone(story);
+              const index = copy.edges.findIndex((e) => e.id === updated.id);
+              if (index >= 0) copy.edges[index] = updated;
+              else copy.edges.push(updated);
+              const errors = validateGraph(copy).filter((e) => /环路|不存在|重复/.test(e));
+              if (errors.length) throw new Error(errors.join('；'));
+              this.story = copy;
+              this.dirty = true;
+              close();
+              this.renderContent();
+            }),
+          'sg-primary',
+        ),
+      );
+      if (edge)
+        body.append(
+          button('删除连线', () => {
+            this.story = { ...story, edges: story.edges.filter((e) => e.id !== edge.id) };
+            this.dirty = true;
+            close();
+            this.renderContent();
+          }),
+        );
+    });
+  }
+}
