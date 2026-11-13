@@ -12,6 +12,8 @@ import {
 import type { ContextSnapshot } from '../host/tavern';
 import { el, button, check, field, showModal, download } from './dom';
 import { graph } from './graph';
+import { MaterialsController } from '../application/materials';
+import { openMaterials } from './materials';
 
 const provenance = { explicit: '原文明确', inferred: '模型推断', original: '原创故事', user: '用户设定' };
 const kinds = { start: '开场', event: '事件', choice: '选择', ending: '结局' };
@@ -47,6 +49,13 @@ export class GuidePanel {
     heading.append(el('span', 'sg-brand', 'STORY GUIDE / 剧情手册'), this.title);
     header.append(
       heading,
+      button('场景素材库', () =>
+        this.safe(() => {
+          if (!this.snapshot) throw new Error('请先打开角色聊天并等待读取完成');
+          this.guardView(this.snapshot);
+          openMaterials(new MaterialsController(this.app, this.snapshot));
+        }),
+      ),
       button('关闭', () => {
         if (!this.dirty || confirm('草稿尚未保存，关闭后更改不会保留。继续？')) this.dialog.close();
       }),
@@ -90,6 +99,7 @@ export class GuidePanel {
   }
   destroy() {
     this.abort?.abort();
+    this.closeEditors();
     this.unsubscribe();
     this.dialog.remove();
   }

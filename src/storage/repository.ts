@@ -1,4 +1,6 @@
 import { parseStory, runSchema, type Story, type RunState } from '../domain/story';
+import { materialSchema, materialIdSchema, type Material } from '../domain/materials';
+import { z } from 'zod';
 
 /** 每次写入等事务完成再返回，避免配额失败时显示保存成功。 */
 export class Repository {
@@ -17,6 +19,7 @@ export class Repository {
   private async transact<T>(
     mode: IDBTransactionMode,
     operation: (store: IDBObjectStore) => IDBRequest<T>,
+    failure = '本地存储失败；请导出备份并检查可用空间',
   ): Promise<T> {
     const db = await this.db();
     return new Promise((resolve, reject) => {
@@ -28,12 +31,70 @@ export class Repository {
       };
       tx.onabort = tx.onerror = () => {
         db.close();
-        reject(new Error('本地存储失败；请导出备份并检查可用空间'));
+        reject(new Error(failure));
       };
     });
   }
   async saveStory(user: string, story: Story): Promise<void> {
     return this.saveVersion(user, story);
+  }
+  async loadMaterials(user: string, character: string): Promise<Material[]> {
+    const range = IDBKeyRange.bound(['material', user, character], ['material', user, character, []]);
+    const rows: unknown[] = await this.transact('readonly', (store) => store.getAll(range));
+    return rows.map((row) => materialSchema.parse(row));
+  }
+  async saveMaterial(user: string, character: string, card: Material): Promise<void> {
+    const valid = materialSchema.parse(card);
+    if (valid.origin !== 'dialogue') throw new Error('内置原创不能覆盖为个人条目');
+    const range = IDBKeyRange.bound(['material', user, character], ['material', user, character, []]);
+    await this.transact(
+      'readwrite',
+      (store) => {
+        const count = store.count(range);
+        count.onsuccess = () => {
+          if (count.result >= 200) store.transaction.abort();
+          else store.add(valid, ['material', user, character, valid.id]);
+        };
+        return count;
+      },
+      '个人素材保存失败：每个角色最多200条且同ID不能覆盖；请导出并清理素材或检查可用空间',
+    );
+  }
+  async loadMaterialFavorites(user: string, character: string): Promise<string[]> {
+    const range = IDBKeyRange.bound(
+      ['material-favorite', user, character],
+      ['material-favorite', user, character, []],
+    );
+    const rows: unknown[] = await this.transact('readonly', (store) => store.getAll(range));
+    const schema = z.object({ schemaVersion: z.literal(1), id: materialIdSchema }).strict();
+    return rows.map((row) => schema.parse(row).id);
+  }
+  async setMaterialFavorite(user: string, character: string, id: string, favorite: boolean): Promise<void> {
+    materialIdSchema.parse(id);
+    const key = ['material-favorite', user, character, id];
+    if (!favorite) {
+      await this.transact('readwrite', (store) => store.delete(key));
+      return;
+    }
+    const range = IDBKeyRange.bound(
+      ['material-favorite', user, character],
+      ['material-favorite', user, character, []],
+    );
+    await this.transact('readwrite', (store) => {
+      const count = store.count(range);
+      count.onsuccess = () => {
+        if (count.result >= 500) store.transaction.abort();
+        else store.put({ schemaVersion: 1, id }, key);
+      };
+      return count;
+    });
+  }
+  async removeMaterial(user: string, character: string, id: string): Promise<void> {
+    if (!materialIdSchema.parse(id).startsWith('personal:')) throw new Error('不能删除内置素材');
+    await this.transact('readwrite', (store) => {
+      store.delete(['material-favorite', user, character, id]);
+      return store.delete(['material', user, character, id]);
+    });
   }
   /** 故事与继承的本局进度在同一事务提交，失败时一起回滚。 */
   async saveVersion(user: string, story: Story, run?: RunState): Promise<void> {

@@ -4383,6 +4383,194 @@ var TavernHost = class {
   }
 };
 
+// src/domain/material-seeds.ts
+var materialSeeds = [
+  {
+    id: "builtin:satin",
+    category: "outfit",
+    title: "\u7F0E\u9762\u7761\u888D\u4E0E\u6E05\u6668\u70ED\u8336",
+    tags: ["\u5C45\u5BB6", "\u6E29\u67D4"],
+    description: "\u6210\u5E74\u4F34\u4FA3\u7A7F\u7740\u7CFB\u597D\u8170\u5E26\u7684\u7F0E\u9762\u7761\u888D\uFF0C\u5728\u7A97\u8FB9\u4EAB\u7528\u65E9\u9910\u3002",
+    opening: "\u5979\u7AEF\u6765\u4E24\u676F\u8336\uFF0C\u95EE\u4F60\u4ECA\u5929\u60F3\u7559\u5728\u5BB6\u91CC\uFF0C\u8FD8\u662F\u4E00\u8D77\u53BB\u6563\u6B65\u3002"
+  },
+  {
+    id: "builtin:ball",
+    category: "outfit",
+    title: "\u821E\u4F1A\u524D\u7684\u793C\u670D",
+    tags: ["\u821E\u4F1A", "\u671F\u5F85"],
+    description: "\u6210\u5E74\u821E\u4F34\u6362\u4E0A\u6B63\u5F0F\u793C\u670D\uFF0C\u6311\u9009\u4E0E\u4E4B\u76F8\u914D\u7684\u80F8\u9488\u3002",
+    opening: "\u955C\u524D\u7684\u4EBA\u56DE\u8FC7\u5934\uFF0C\u628A\u4E24\u679A\u80F8\u9488\u653E\u5728\u638C\u5FC3\uFF1A\u4F60\u89C9\u5F97\u54EA\u679A\u66F4\u9002\u5408\u4ECA\u665A\uFF1F"
+  },
+  {
+    id: "builtin:coat",
+    category: "outfit",
+    title: "\u501F\u7ED9\u4F60\u7684\u5927\u8863",
+    tags: ["\u96E8\u591C", "\u5173\u5FC3"],
+    description: "\u6563\u573A\u540E\u6C14\u6E29\u9AA4\u964D\uFF0C\u5BF9\u65B9\u628A\u81EA\u5DF1\u7684\u5927\u8863\u62AB\u5728\u4F60\u80A9\u4E0A\u3002",
+    opening: "\u4F60\u62C9\u4F4F\u51C6\u5907\u5192\u96E8\u79BB\u5F00\u7684\u4EBA\uFF0C\u63D0\u8BAE\u5148\u5728\u8857\u89D2\u5496\u5561\u5E97\u7B49\u4E00\u4F1A\u513F\u3002"
+  },
+  {
+    id: "builtin:theme",
+    category: "outfit",
+    title: "\u4E3B\u9898\u665A\u5BB4\u7684\u590D\u53E4\u642D\u914D",
+    tags: ["\u590D\u53E4", "\u7EA6\u4F1A"],
+    description: "\u6210\u5E74\u4F34\u4FA3\u4E3A\u4E3B\u9898\u665A\u5BB4\u642D\u914D\u886C\u886B\u3001\u9A6C\u7532\u548C\u4E1D\u5DFE\u3002",
+    opening: "\u4ED6\u5C06\u4E1D\u5DFE\u9012\u7ED9\u4F60\uFF0C\u7B11\u7740\u8BF4\u4ECA\u665A\u7684\u9020\u578B\u8FD8\u7F3A\u4E00\u4F4D\u5BA1\u7F8E\u987E\u95EE\u3002"
+  },
+  {
+    id: "builtin:door",
+    category: "pose",
+    title: "\u501A\u95E8\u56DE\u671B",
+    tags: ["\u544A\u522B", "\u7559\u604B"],
+    description: "\u9053\u522B\u65F6\u5728\u95E8\u53E3\u7A0D\u4F5C\u505C\u7559\uFF0C\u7528\u76EE\u5149\u8868\u8FBE\u8FD8\u60F3\u591A\u804A\u7247\u523B\u3002",
+    opening: "\u8D70\u5230\u95E8\u8FB9\u7684\u4EBA\u53C8\u56DE\u8FC7\u5934\uFF1A\u521A\u624D\u90A3\u4E2A\u6545\u4E8B\uFF0C\u4F60\u8FD8\u6CA1\u8BB2\u5B8C\u5462\u3002"
+  },
+  {
+    id: "builtin:window",
+    category: "pose",
+    title: "\u7A97\u8FB9\u5E76\u80A9",
+    tags: ["\u5B89\u9759", "\u591C\u666F"],
+    description: "\u4E24\u4F4D\u6210\u5E74\u4EBA\u5E76\u80A9\u7AD9\u5728\u7A97\u8FB9\uFF0C\u4FDD\u6301\u5F7C\u6B64\u8212\u9002\u7684\u8DDD\u79BB\u770B\u591C\u666F\u3002",
+    opening: "\u8FDC\u5904\u7684\u706F\u4E00\u76CF\u76CF\u4EAE\u8D77\uFF0C\u5979\u95EE\u4F60\u8FD8\u8BB0\u4E0D\u8BB0\u5F97\u7B2C\u4E00\u6B21\u6765\u8FD9\u5EA7\u57CE\u5E02\u3002"
+  },
+  {
+    id: "builtin:bench",
+    category: "pose",
+    title: "\u957F\u6905\u4E0A\u7684\u4FA7\u8EAB\u503E\u542C",
+    tags: ["\u516C\u56ED", "\u503E\u8BC9"],
+    description: "\u5728\u957F\u6905\u4E0A\u4FA7\u8EAB\u9762\u5411\u5BF9\u65B9\uFF0C\u653E\u4E0B\u624B\u673A\uFF0C\u8BA4\u771F\u503E\u542C\u3002",
+    opening: "\u4ED6\u7EC8\u4E8E\u505C\u4E0B\u73A9\u7B11\uFF0C\u95EE\u4F60\u4ECA\u5929\u662F\u4E0D\u662F\u6709\u4EC0\u4E48\u5FC3\u4E8B\u3002"
+  },
+  {
+    id: "builtin:umbrella",
+    category: "pose",
+    title: "\u4F1E\u4E0B\u7B49\u4E00\u6B65",
+    tags: ["\u4E0B\u96E8", "\u4F53\u8D34"],
+    description: "\u6491\u4F1E\u7684\u4EBA\u653E\u6162\u811A\u6B65\uFF0C\u8C03\u6574\u4F1E\u9762\uFF0C\u8BA9\u4E24\u4EBA\u90FD\u80FD\u907F\u96E8\u3002",
+    opening: "\u4F60\u4EEC\u5728\u8DEF\u53E3\u505C\u4E0B\uFF0C\u96E8\u58F0\u76D6\u4F4F\u4E86\u534A\u53E5\u8BDD\uFF0C\u4E8E\u662F\u51B3\u5B9A\u8D70\u8FD1\u4E00\u70B9\u91CD\u65B0\u8BF4\u3002"
+  },
+  {
+    id: "builtin:collar",
+    category: "interaction",
+    title: "\u5F81\u6C42\u540C\u610F\u540E\u6574\u7406\u8863\u9886",
+    tags: ["\u51FA\u95E8\u524D", "\u7EC6\u5FC3"],
+    description: "\u5148\u8BE2\u95EE\u5BF9\u65B9\u662F\u5426\u4ECB\u610F\uFF0C\u518D\u5E2E\u5FD9\u629A\u5E73\u7FFB\u8D77\u7684\u8863\u9886\u3002",
+    opening: "\u4F60\u6307\u4E86\u6307\u4ED6\u7684\u9886\u53E3\uFF1A\u8FD9\u91CC\u6709\u4E00\u70B9\u4E71\uFF0C\u6211\u53EF\u4EE5\u5E2E\u4F60\u6574\u7406\u5417\uFF1F"
+  },
+  {
+    id: "builtin:hand",
+    category: "interaction",
+    title: "\u4F38\u51FA\u624B\u7B49\u5F85\u56DE\u5E94",
+    tags: ["\u6563\u6B65", "\u8BD5\u63A2"],
+    description: "\u63D0\u51FA\u7275\u624B\u9080\u8BF7\uFF0C\u7ED9\u5BF9\u65B9\u9009\u62E9\u63A5\u53D7\u6216\u7EE7\u7EED\u5E76\u80A9\u8D70\u7684\u7A7A\u95F4\u3002",
+    opening: "\u4EBA\u7FA4\u6E10\u6E10\u62E5\u6324\uFF0C\u4F60\u4F38\u51FA\u624B\uFF1A\u8981\u7275\u7740\u8D70\u5417\uFF1F\u4E0D\u60F3\u4E5F\u6CA1\u5173\u7CFB\u3002"
+  },
+  {
+    id: "builtin:hug",
+    category: "interaction",
+    title: "\u4E45\u522B\u540E\u7684\u62E5\u62B1\u9080\u8BF7",
+    tags: ["\u91CD\u9022", "\u5B89\u5FC3"],
+    description: "\u6210\u5E74\u604B\u4EBA\u5728\u91CD\u9022\u65F6\u786E\u8BA4\u5F7C\u6B64\u613F\u610F\uFF0C\u518D\u7528\u62E5\u62B1\u8868\u8FBE\u601D\u5FF5\u3002",
+    opening: "\u8F66\u7AD9\u51FA\u53E3\uFF0C\u4F60\u4EEC\u76F8\u89C6\u800C\u7B11\u3002\u5979\u95EE\uFF1A\u73B0\u5728\u53EF\u4EE5\u62B1\u4E00\u4E0B\u5417\uFF1F"
+  },
+  {
+    id: "builtin:dance",
+    category: "interaction",
+    title: "\u6162\u821E\u9080\u7EA6",
+    tags: ["\u97F3\u4E50", "\u6D6A\u6F2B"],
+    description: "\u665A\u5BB4\u7ED3\u675F\u540E\u63D0\u51FA\u5171\u821E\u9080\u8BF7\uFF0C\u4EE5\u5BF9\u65B9\u8212\u9002\u7684\u8282\u594F\u7EC3\u4E60\u821E\u6B65\u3002",
+    opening: "\u719F\u6089\u7684\u65CB\u5F8B\u54CD\u8D77\uFF0C\u4ED6\u5411\u4F60\u4F38\u624B\uFF1A\u613F\u610F\u966A\u6211\u8DF3\u4E00\u5C0F\u6BB5\u5417\uFF1F"
+  },
+  {
+    id: "builtin:rain",
+    category: "scene",
+    title: "\u96E8\u591C\u4E66\u5E97",
+    tags: ["\u96E8\u591C", "\u521D\u8BC6"],
+    description: "\u4E24\u4F4D\u6210\u5E74\u8BFB\u8005\u88AB\u9635\u96E8\u7559\u5728\u5373\u5C06\u6253\u70CA\u7684\u4E66\u5E97\uFF0C\u4ECE\u540C\u4E00\u672C\u4E66\u804A\u8D77\u3002",
+    opening: "\u4F60\u4EEC\u540C\u65F6\u4F38\u624B\u53BB\u62FF\u4E66\u67B6\u4E0A\u6700\u540E\u4E00\u672C\u8BD7\u96C6\uFF0C\u53C8\u540C\u65F6\u7B11\u7740\u6536\u56DE\u624B\u3002"
+  },
+  {
+    id: "builtin:dinner",
+    category: "scene",
+    title: "\u665A\u9910\u7684\u5C0F\u5C0F\u610F\u5916",
+    tags: ["\u5C45\u5BB6", "\u8F7B\u677E"],
+    description: "\u6210\u5E74\u4F34\u4FA3\u7B2C\u4E00\u6B21\u4E00\u8D77\u4E0B\u53A8\uFF0C\u98DF\u8C31\u51FA\u4E86\u5DEE\u9519\uFF0C\u4E8E\u662F\u5171\u540C\u60F3\u529E\u6CD5\u8865\u6551\u3002",
+    opening: "\u8BA1\u65F6\u5668\u54CD\u8D77\uFF0C\u53A8\u623F\u4F20\u6765\u7B11\u58F0\uFF1A\u6211\u4EEC\u7684\u70E4\u997C\u597D\u50CF\u9700\u8981\u4E00\u4E2A\u5168\u65B0\u7684\u540D\u5B57\u3002"
+  },
+  {
+    id: "builtin:letter",
+    category: "scene",
+    title: "\u8FDF\u5230\u7684\u5FC3\u610F",
+    tags: ["\u91CD\u9022", "\u5766\u8BDA"],
+    description: "\u6210\u5E74\u65E7\u53CB\u91CD\u9022\u540E\uFF0C\u51B3\u5B9A\u4EB2\u53E3\u8BF4\u51FA\u5F53\u5E74\u6CA1\u6709\u8868\u8FBE\u7684\u5FC3\u610F\u3002",
+    opening: "\u5979\u628A\u4E00\u5C01\u672A\u5BC4\u51FA\u7684\u4FE1\u653E\u5728\u684C\u4E0A\uFF0C\u5374\u5148\u95EE\u4F60\u662F\u5426\u613F\u610F\u542C\u4E00\u6BB5\u8FC7\u53BB\u3002"
+  },
+  {
+    id: "builtin:morning",
+    category: "scene",
+    title: "\u7EA6\u4F1A\u540E\u7684\u6E05\u6668\u6D88\u606F",
+    tags: ["\u65E5\u5E38", "\u671F\u5F85"],
+    description: "\u6628\u665A\u7EA6\u4F1A\u6109\u5FEB\u7684\u4E24\u4F4D\u6210\u5E74\u4EBA\uFF0C\u901A\u8FC7\u4E00\u6761\u7B80\u77ED\u6D88\u606F\u5546\u91CF\u4E0B\u6B21\u89C1\u9762\u3002",
+    opening: "\u624B\u673A\u4EAE\u8D77\uFF1A\u6628\u5929\u90A3\u5BB6\u5E97\u7684\u751C\u70B9\u8FD8\u6CA1\u5C1D\u5230\uFF0C\u4E0B\u5468\u8981\u4E0D\u8981\u4E00\u8D77\u8865\u4E0A\uFF1F"
+  }
+];
+
+// src/domain/materials.ts
+var materialCategories = { outfit: "\u670D\u88C5", pose: "\u59FF\u6001", interaction: "\u4E92\u52A8", scene: "\u573A\u666F" };
+var categorySchema = z.enum(["outfit", "pose", "interaction", "scene"]);
+var sourceSchema2 = z.object({
+  label: z.string().trim().min(1).max(160),
+  text: z.string().min(1).max(2e4),
+  start: z.number().int().nonnegative(),
+  end: z.number().int().positive()
+}).strict();
+var materialIdSchema = z.string().regex(/^(builtin|personal):[a-zA-Z0-9-]+$/).max(180);
+var materialSchema = z.object({
+  schemaVersion: z.literal(1),
+  id: materialIdSchema,
+  title: z.string().trim().min(1).max(100),
+  category: categorySchema,
+  tags: z.array(z.string().trim().min(1).max(30)).max(10),
+  description: z.string().trim().min(1).max(2e3),
+  opening: z.string().trim().min(1).max(2e3),
+  origin: z.enum(["builtin", "dialogue"]),
+  quote: z.string().max(2e3),
+  source: sourceSchema2.optional()
+}).strict().superRefine((card, ctx) => {
+  if (card.origin === "builtin") {
+    if (!card.id.startsWith("builtin:") || card.source || card.quote)
+      ctx.addIssue({ code: "custom", message: "\u5185\u7F6E\u539F\u521B\u4E0D\u80FD\u4F2A\u9020\u6765\u6E90" });
+  } else if (!card.id.startsWith("personal:") || !card.source || card.source.start >= card.source.end || card.source.end > card.source.text.length || !card.quote.trim() || card.quote !== card.source.text.slice(card.source.start, card.source.end)) {
+    ctx.addIssue({ code: "custom", message: "\u6458\u5F55\u5FC5\u987B\u5BF9\u5E94\u5BF9\u8BDD\u4E2D\u7684\u6709\u6548\u9009\u533A" });
+  }
+});
+function extractMaterial(input) {
+  const source = sourceSchema2.parse(input.source);
+  return materialSchema.parse({
+    ...input,
+    schemaVersion: 1,
+    origin: "dialogue",
+    quote: source.text.slice(source.start, source.end),
+    source
+  });
+}
+var builtinMaterials = materialSeeds.map(
+  (card) => materialSchema.parse({ ...card, schemaVersion: 1, origin: "builtin", quote: "" })
+);
+function filterMaterials(cards, category, query) {
+  const key = query.trim().toLocaleLowerCase();
+  return cards.filter(
+    (card) => (category === "all" || card.category === category) && [card.title, card.description, card.opening, ...card.tags].join("\n").toLocaleLowerCase().includes(key)
+  );
+}
+function materialText(card) {
+  return `${card.title}
+${materialCategories[card.category]} \xB7 ${card.tags.join(" / ")}
+${card.origin === "builtin" ? "\u5185\u7F6E\u539F\u521B\u7D20\u6750 \xB7 \u975E\u89D2\u8272\u539F\u8BBE\u5B9A" : "\u7528\u6237\u6539\u7F16 \xB7 \u975E\u89D2\u8272\u539F\u8BBE\u5B9A"}
+${card.description}
+\u5267\u60C5\u5F00\u573A\uFF1A${card.opening}`;
+}
+
 // src/storage/repository.ts
 var Repository = class {
   constructor(name = "sillytavern-story-guide-v1") {
@@ -4399,7 +4587,7 @@ var Repository = class {
       request.onblocked = () => reject(new Error("\u6570\u636E\u5E93\u5347\u7EA7\u88AB\u5176\u4ED6\u6807\u7B7E\u9875\u963B\u6B62\uFF0C\u8BF7\u5173\u95ED\u5176\u4ED6\u9152\u9986\u9875\u9762"));
     });
   }
-  async transact(mode, operation) {
+  async transact(mode, operation, failure = "\u672C\u5730\u5B58\u50A8\u5931\u8D25\uFF1B\u8BF7\u5BFC\u51FA\u5907\u4EFD\u5E76\u68C0\u67E5\u53EF\u7528\u7A7A\u95F4") {
     const db = await this.db();
     return new Promise((resolve, reject) => {
       const tx = db.transaction("records", mode);
@@ -4410,12 +4598,70 @@ var Repository = class {
       };
       tx.onabort = tx.onerror = () => {
         db.close();
-        reject(new Error("\u672C\u5730\u5B58\u50A8\u5931\u8D25\uFF1B\u8BF7\u5BFC\u51FA\u5907\u4EFD\u5E76\u68C0\u67E5\u53EF\u7528\u7A7A\u95F4"));
+        reject(new Error(failure));
       };
     });
   }
   async saveStory(user, story) {
     return this.saveVersion(user, story);
+  }
+  async loadMaterials(user, character) {
+    const range = IDBKeyRange.bound(["material", user, character], ["material", user, character, []]);
+    const rows = await this.transact("readonly", (store) => store.getAll(range));
+    return rows.map((row) => materialSchema.parse(row));
+  }
+  async saveMaterial(user, character, card) {
+    const valid = materialSchema.parse(card);
+    if (valid.origin !== "dialogue") throw new Error("\u5185\u7F6E\u539F\u521B\u4E0D\u80FD\u8986\u76D6\u4E3A\u4E2A\u4EBA\u6761\u76EE");
+    const range = IDBKeyRange.bound(["material", user, character], ["material", user, character, []]);
+    await this.transact(
+      "readwrite",
+      (store) => {
+        const count = store.count(range);
+        count.onsuccess = () => {
+          if (count.result >= 200) store.transaction.abort();
+          else store.add(valid, ["material", user, character, valid.id]);
+        };
+        return count;
+      },
+      "\u4E2A\u4EBA\u7D20\u6750\u4FDD\u5B58\u5931\u8D25\uFF1A\u6BCF\u4E2A\u89D2\u8272\u6700\u591A200\u6761\u4E14\u540CID\u4E0D\u80FD\u8986\u76D6\uFF1B\u8BF7\u5BFC\u51FA\u5E76\u6E05\u7406\u7D20\u6750\u6216\u68C0\u67E5\u53EF\u7528\u7A7A\u95F4"
+    );
+  }
+  async loadMaterialFavorites(user, character) {
+    const range = IDBKeyRange.bound(
+      ["material-favorite", user, character],
+      ["material-favorite", user, character, []]
+    );
+    const rows = await this.transact("readonly", (store) => store.getAll(range));
+    const schema = z.object({ schemaVersion: z.literal(1), id: materialIdSchema }).strict();
+    return rows.map((row) => schema.parse(row).id);
+  }
+  async setMaterialFavorite(user, character, id2, favorite) {
+    materialIdSchema.parse(id2);
+    const key = ["material-favorite", user, character, id2];
+    if (!favorite) {
+      await this.transact("readwrite", (store) => store.delete(key));
+      return;
+    }
+    const range = IDBKeyRange.bound(
+      ["material-favorite", user, character],
+      ["material-favorite", user, character, []]
+    );
+    await this.transact("readwrite", (store) => {
+      const count = store.count(range);
+      count.onsuccess = () => {
+        if (count.result >= 500) store.transaction.abort();
+        else store.put({ schemaVersion: 1, id: id2 }, key);
+      };
+      return count;
+    });
+  }
+  async removeMaterial(user, character, id2) {
+    if (!materialIdSchema.parse(id2).startsWith("personal:")) throw new Error("\u4E0D\u80FD\u5220\u9664\u5185\u7F6E\u7D20\u6750");
+    await this.transact("readwrite", (store) => {
+      store.delete(["material-favorite", user, character, id2]);
+      return store.delete(["material", user, character, id2]);
+    });
   }
   /** 故事与继承的本局进度在同一事务提交，失败时一起回滚。 */
   async saveVersion(user, story, run) {
@@ -4964,6 +5210,352 @@ function graph(story, current, select, edgeSelect, moved) {
   return root;
 }
 
+// src/application/materials.ts
+var MaterialsController = class {
+  constructor(app, snapshot) {
+    this.app = app;
+    this.snapshot = snapshot;
+  }
+  guard() {
+    this.app.guard(this.snapshot);
+  }
+  async load() {
+    this.guard();
+    const [personal, favorites] = await Promise.all([
+      this.app.repository.loadMaterials(this.snapshot.user, this.snapshot.characterKey),
+      this.app.repository.loadMaterialFavorites(this.snapshot.user, this.snapshot.characterKey)
+    ]);
+    this.guard();
+    return { cards: [...builtinMaterials, ...personal], favorites };
+  }
+  async save(input) {
+    this.guard();
+    const card = extractMaterial(input);
+    await this.app.repository.saveMaterial(this.snapshot.user, this.snapshot.characterKey, card);
+    this.guard();
+  }
+  async favorite(id2, value) {
+    const { cards } = await this.load();
+    if (!cards.some((card) => card.id === id2)) throw new Error("\u7D20\u6750\u5DF2\u4E0D\u5B58\u5728\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00");
+    await this.app.repository.setMaterialFavorite(this.snapshot.user, this.snapshot.characterKey, id2, value);
+    this.guard();
+  }
+  async remove(id2) {
+    this.guard();
+    await this.app.repository.removeMaterial(this.snapshot.user, this.snapshot.characterKey, id2);
+    this.guard();
+  }
+  async backup() {
+    const { cards, favorites } = await this.load();
+    return {
+      format: "story-guide-materials",
+      schemaVersion: 1,
+      characterKey: this.snapshot.characterKey,
+      materials: cards.filter((card) => card.origin === "dialogue"),
+      favorites
+    };
+  }
+};
+
+// src/ui/materials.ts
+function openMaterials(app) {
+  showModal("\u573A\u666F\u7D20\u6750\u5E93", (body) => {
+    body.classList.add("sg-material-library");
+    const status = el("p", "sg-material-status", "\u6B63\u5728\u8BFB\u53D6\u7D20\u6750\u2026");
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    const list = el("div", "sg-material-grid");
+    let cards = [], favorites = /* @__PURE__ */ new Set();
+    let pending = false;
+    const message = (text2, error = false) => {
+      status.textContent = text2;
+      status.classList.toggle("sg-error", error);
+    };
+    const guard = () => {
+      app.guard();
+      if (!body.isConnected) throw new Error("\u7D20\u6750\u5E93\u5DF2\u5173\u95ED\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00");
+    };
+    const safe = async (action) => {
+      if (pending) {
+        message("\u6B63\u5728\u5904\u7406\uFF0C\u8BF7\u7B49\u5F85\u5B8C\u6210");
+        return;
+      }
+      pending = true;
+      try {
+        guard();
+        await action();
+      } catch (error) {
+        message(error instanceof Error ? error.message : "\u7D20\u6750\u64CD\u4F5C\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5", true);
+      } finally {
+        pending = false;
+      }
+    };
+    const category = categorySelect("\u7D20\u6750\u5206\u7C7B", true);
+    const search = field("\u641C\u7D22\u7D20\u6750", "");
+    search.input.placeholder = "\u6807\u9898\u3001\u6C1B\u56F4\u3001\u63CF\u8FF0\u6216\u5F00\u573A";
+    const onlyFavorites = check("\u53EA\u770B\u6536\u85CF", false, () => render());
+    const onlyPersonal = check("\u53EA\u770B\u4E2A\u4EBA\u7D20\u6750", false, () => render());
+    const reload = async () => {
+      const data = await app.load();
+      guard();
+      cards = data.cards;
+      favorites = new Set(data.favorites);
+      render();
+    };
+    function render() {
+      const filtered = filterMaterials(
+        cards,
+        category.value,
+        search.input.value
+      ).filter(
+        (card) => (!onlyFavorites.input.checked || favorites.has(card.id)) && (!onlyPersonal.input.checked || card.origin === "dialogue")
+      );
+      list.replaceChildren();
+      for (const card of filtered) {
+        const article = el("article", "sg-material-card");
+        article.append(
+          el(
+            "span",
+            "sg-badge",
+            `${materialCategories[card.category]} \xB7 ${card.origin === "builtin" ? "\u5185\u7F6E\u539F\u521B" : "\u5BF9\u8BDD\u6458\u5F55 / \u7528\u6237\u6539\u7F16"}`
+          ),
+          el("h3", "", card.title),
+          el("small", "sg-muted", card.tags.join(" \xB7 ")),
+          el("p", "", card.description),
+          el("p", "sg-material-opening", card.opening)
+        );
+        const actions = el("div", "sg-toolbar");
+        actions.append(
+          button(
+            "\u590D\u5236\u7D20\u6750",
+            () => safe(async () => {
+              await navigator.clipboard.writeText(materialText(card));
+              guard();
+              message("\u7D20\u6750\u5DF2\u590D\u5236\uFF0C\u6CA1\u6709\u53D1\u9001\u804A\u5929");
+            })
+          ),
+          button(
+            favorites.has(card.id) ? "\u53D6\u6D88\u6536\u85CF" : "\u6536\u85CF",
+            () => safe(async () => {
+              await app.favorite(card.id, !favorites.has(card.id));
+              await reload();
+              message("\u6536\u85CF\u5DF2\u4FDD\u5B58\u5230\u5F53\u524D\u6D4F\u89C8\u5668");
+            })
+          )
+        );
+        if (card.source)
+          actions.append(
+            button("\u67E5\u770B\u6765\u6E90", () => {
+              showModal("\u7D20\u6750\u6765\u6E90", (sourceBody) => {
+                const source = card.source;
+                if (!source) return;
+                sourceBody.append(
+                  el("h3", "", source.label),
+                  el(
+                    "p",
+                    "sg-muted",
+                    `\u539F\u6587\u5B57\u7B26 ${source.start + 1}\u2013${source.end}\uFF1B\u4EE5\u4E0B\u4EC5\u4E3A\u6458\u5F55\uFF0C\u4E0D\u4EE3\u8868\u89D2\u8272\u539F\u8BBE\u5B9A\u3002`
+                  ),
+                  el("blockquote", "", card.quote)
+                );
+                const details = el("details");
+                details.append(
+                  el("summary", "", "\u67E5\u770B\u4FDD\u5B58\u7684\u5B8C\u6574\u5BF9\u8BDD"),
+                  el("pre", "sg-material-source", source.text)
+                );
+                sourceBody.append(details);
+              });
+            }),
+            button("\u5220\u9664\u4E2A\u4EBA\u7D20\u6750", () => {
+              showModal("\u5220\u9664\u4E2A\u4EBA\u7D20\u6750", (confirmBody, close) => {
+                confirmBody.append(
+                  el("p", "", `\u5220\u9664\u300C${card.title}\u300D\u53CA\u5176\u6536\u85CF\u3002\u53EF\u5148\u5BFC\u51FA\u7D20\u6750\u5907\u4EFD\u7559\u5B58\u3002`),
+                  button(
+                    "\u786E\u8BA4\u5220\u9664",
+                    () => safe(async () => {
+                      await app.remove(card.id);
+                      await reload();
+                      close();
+                      message("\u4E2A\u4EBA\u7D20\u6750\u5DF2\u5220\u9664");
+                    })
+                  )
+                );
+              });
+            })
+          );
+        article.append(actions);
+        list.append(article);
+      }
+      if (!filtered.length)
+        list.append(el("p", "sg-empty", "\u6CA1\u6709\u5339\u914D\u7684\u7D20\u6750\u3002\u53EF\u4EE5\u6E05\u7A7A\u7B5B\u9009\uFF0C\u6216\u6574\u7406\u81EA\u5DF1\u7684\u5BF9\u8BDD\u7247\u6BB5\u3002"));
+    }
+    category.addEventListener("change", render);
+    search.input.addEventListener("input", render);
+    const controls = el("div", "sg-material-controls");
+    controls.append(search.root, category, onlyFavorites.root, onlyPersonal.root);
+    const tools = el("div", "sg-toolbar");
+    tools.append(
+      button(
+        "\u6574\u7406\u7C98\u8D34\u7684\u5BF9\u8BDD",
+        () => openExtractor(app, async () => {
+          await reload();
+          message("\u4E2A\u4EBA\u7D20\u6750\u5DF2\u4FDD\u5B58\u5230\u5F53\u524D\u6D4F\u89C8\u5668");
+        })
+      ),
+      button(
+        "\u5BFC\u51FA\u7D20\u6750\u5907\u4EFD",
+        () => safe(async () => {
+          const data = await app.backup();
+          guard();
+          download("story-guide-materials.json", data);
+          message("\u7D20\u6750\u5907\u4EFD\u5DF2\u5BFC\u51FA\uFF08\u5305\u542B\u4E2A\u4EBA\u6458\u5F55\u4E0E\u6536\u85CF\uFF09");
+        })
+      )
+    );
+    body.append(
+      el(
+        "p",
+        "sg-muted",
+        "\u6210\u5E74\u89D2\u8272\u7684\u975E\u9732\u9AA8\u604B\u7231\u521B\u4F5C\u7D20\u6750\u3002\u9009\u62E9\u540E\u590D\u5236\u4F7F\u7528\uFF1B\u5185\u7F6E\u539F\u521B\u5E76\u975E\u89D2\u8272\u539F\u8BBE\u5B9A\u3002\u4E2A\u4EBA\u7D20\u6750\u6309\u8D26\u53F7\u3001\u89D2\u8272\u4FDD\u5B58\u5728\u5F53\u524D\u6D4F\u89C8\u5668\uFF0C\u53EF\u5BFC\u51FA\u7559\u5B58\u3002"
+      ),
+      tools,
+      controls,
+      status,
+      list
+    );
+    queueMicrotask(() => {
+      void safe(async () => {
+        await reload();
+        message("\u9009\u62E9\u5206\u7C7B\u6216\u641C\u7D22\u5173\u952E\u8BCD\uFF0C\u627E\u5230\u5408\u9002\u7684\u6545\u4E8B\u5F00\u573A\u3002");
+      });
+    });
+  });
+}
+function categorySelect(label, all = false) {
+  const select = el("select");
+  select.setAttribute("aria-label", label);
+  for (const [value, text2] of [
+    ...all ? [["all", "\u5168\u90E8\u5206\u7C7B"]] : [],
+    ...Object.entries(materialCategories)
+  ]) {
+    const option = el("option", "", text2);
+    option.value = value ?? "";
+    select.append(option);
+  }
+  return select;
+}
+function openExtractor(app, saved) {
+  showModal("\u6574\u7406\u5BF9\u8BDD\u7247\u6BB5", (body, closeEditor) => {
+    const label = field("\u5BF9\u8BDD\u6765\u6E90\u540D\u79F0", "\u624B\u52A8\u7C98\u8D34\u7684\u5BF9\u8BDD");
+    const raw = field("\u5BF9\u8BDD\u539F\u6587", "", true);
+    const title = field("\u7D20\u6750\u6807\u9898", "");
+    title.input.maxLength = 100;
+    const category = categorySelect("\u6574\u7406\u7D20\u6750\u5206\u7C7B");
+    const tags = field("\u6C1B\u56F4\u6807\u7B7E\uFF08\u987F\u53F7\u5206\u9694\uFF09", "");
+    const description = field("\u7D20\u6750\u63CF\u8FF0\uFF08\u7528\u6237\u6539\u7F16\uFF09", "", true);
+    description.input.maxLength = 2e3;
+    const opening = field("\u5267\u60C5\u5F00\u573A\uFF08\u7528\u6237\u6539\u7F16\uFF09", "", true);
+    opening.input.maxLength = 2e3;
+    const status = el("p");
+    status.setAttribute("role", "status");
+    const quote = el("blockquote", "", "\u7C98\u8D34\u5BF9\u8BDD\u540E\uFF0C\u7528\u9F20\u6807\u6216\u952E\u76D8\u9009\u4E2D\u9700\u8981\u7684\u7247\u6BB5\u3002");
+    let selection;
+    let saving = false;
+    function report(error) {
+      status.textContent = error instanceof Error ? error.message : "\u6574\u7406\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5";
+      status.className = "sg-error";
+    }
+    body.append(
+      el(
+        "p",
+        "sg-muted",
+        "\u4EC5\u6574\u7406\u6210\u5E74\u89D2\u8272\u7684\u975E\u9732\u9AA8\u670D\u88C5\u3001\u59FF\u6001\u3001\u4E92\u52A8\u548C\u573A\u666F\u3002\u539F\u6587\u6700\u591A 20000 \u5B57\u7B26\uFF0C\u9009\u533A\u6700\u591A 2000 \u5B57\u7B26\uFF1B\u4F1A\u4FDD\u5B58\u5B8C\u6574\u7C98\u8D34\u539F\u6587\u4EE5\u6838\u5BF9\u6765\u6E90\uFF0C\u8BF7\u53EA\u7C98\u8D34\u613F\u610F\u7559\u5B58\u7684\u5185\u5BB9\u3002\u4E0D\u4F1A\u5411\u6A21\u578B\u53D1\u9001\u5BF9\u8BDD\u3002"
+      ),
+      label.root,
+      raw.root,
+      button("\u4F7F\u7528\u9009\u4E2D\u7247\u6BB5", () => {
+        if (raw.input.value.length > 2e4) {
+          report(new Error("\u539F\u6587\u8D85\u8FC720000\u5B57\u7B26\uFF0C\u8BF7\u7F29\u5C0F\u7C98\u8D34\u8303\u56F4\uFF1B\u6CA1\u6709\u622A\u65AD\u6216\u4FDD\u5B58"));
+          return;
+        }
+        const start = raw.input.selectionStart ?? 0, end = raw.input.selectionEnd ?? 0;
+        if (end <= start || end - start > 2e3) {
+          report(new Error("\u8BF7\u9009\u62E9 1\u20132000 \u5B57\u7B26\u7684\u5BF9\u8BDD\u7247\u6BB5"));
+          return;
+        }
+        selection = { text: raw.input.value, start, end };
+        quote.textContent = selection.text.slice(start, end);
+        status.textContent = "\u9009\u533A\u5DF2\u8BB0\u5F55\uFF0C\u8BF7\u8865\u5145\u7D20\u6750\u4FE1\u606F\u5E76\u9884\u89C8\u3002";
+        status.className = "";
+      }),
+      quote,
+      title.root,
+      category,
+      tags.root,
+      description.root,
+      opening.root,
+      status,
+      button(
+        "\u9884\u89C8\u7D20\u6750",
+        () => {
+          try {
+            app.guard();
+            if (!selection || raw.input.value !== selection.text)
+              throw new Error("\u8BF7\u5148\u9009\u4E2D\u539F\u6587\u7247\u6BB5\uFF1B\u539F\u6587\u4FEE\u6539\u540E\u9700\u8981\u91CD\u65B0\u9009\u62E9");
+            const input = {
+              id: `personal:${crypto.randomUUID()}`,
+              title: title.input.value,
+              category: category.value,
+              tags: tags.input.value.split("\u3001").map((s) => s.trim()).filter(Boolean),
+              description: description.input.value,
+              opening: opening.input.value,
+              source: { ...selection, label: label.input.value }
+            };
+            const card = extractMaterial(input);
+            showModal("\u7D20\u6750\u9884\u89C8", (preview, closePreview) => {
+              preview.classList.add("sg-material-preview");
+              preview.append(
+                el("pre", "sg-material-source", materialText(card)),
+                el("h3", "", `\u539F\u6587\u6458\u5F55 \xB7 ${input.source.label}`),
+                el("blockquote", "", card.quote)
+              );
+              const result = el("p");
+              result.setAttribute("role", "status");
+              const save = button(
+                "\u4FDD\u5B58\u5230\u4E2A\u4EBA\u7D20\u6750",
+                async () => {
+                  if (saving) return;
+                  saving = true;
+                  save.disabled = true;
+                  try {
+                    if (!body.isConnected || !preview.isConnected)
+                      throw new Error("\u7F16\u8F91\u5668\u5DF2\u5173\u95ED\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00");
+                    await app.save(input);
+                    await saved();
+                    closePreview();
+                    closeEditor();
+                  } catch (error) {
+                    result.textContent = error instanceof Error ? error.message : "\u4FDD\u5B58\u5931\u8D25";
+                    result.className = "sg-error";
+                  } finally {
+                    saving = false;
+                    save.disabled = false;
+                  }
+                },
+                "sg-primary"
+              );
+              preview.append(result, save);
+            });
+          } catch (error) {
+            report(error);
+          }
+        },
+        "sg-primary"
+      )
+    );
+  });
+}
+
 // src/ui/panel.ts
 var provenance = { explicit: "\u539F\u6587\u660E\u786E", inferred: "\u6A21\u578B\u63A8\u65AD", original: "\u539F\u521B\u6545\u4E8B", user: "\u7528\u6237\u8BBE\u5B9A" };
 var kinds = { start: "\u5F00\u573A", event: "\u4E8B\u4EF6", choice: "\u9009\u62E9", ending: "\u7ED3\u5C40" };
@@ -4975,6 +5567,14 @@ var GuidePanel = class {
     heading.append(el("span", "sg-brand", "STORY GUIDE / \u5267\u60C5\u624B\u518C"), this.title);
     header.append(
       heading,
+      button(
+        "\u573A\u666F\u7D20\u6750\u5E93",
+        () => this.safe(() => {
+          if (!this.snapshot) throw new Error("\u8BF7\u5148\u6253\u5F00\u89D2\u8272\u804A\u5929\u5E76\u7B49\u5F85\u8BFB\u53D6\u5B8C\u6210");
+          this.guardView(this.snapshot);
+          openMaterials(new MaterialsController(this.app, this.snapshot));
+        })
+      ),
       button("\u5173\u95ED", () => {
         if (!this.dirty || confirm("\u8349\u7A3F\u5C1A\u672A\u4FDD\u5B58\uFF0C\u5173\u95ED\u540E\u66F4\u6539\u4E0D\u4F1A\u4FDD\u7559\u3002\u7EE7\u7EED\uFF1F")) this.dialog.close();
       })
@@ -5041,6 +5641,7 @@ var GuidePanel = class {
   unsubscribe;
   destroy() {
     this.abort?.abort();
+    this.closeEditors();
     this.unsubscribe();
     this.dialog.remove();
   }
