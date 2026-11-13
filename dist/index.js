@@ -1,4 +1,4 @@
-// ../../node_modules/zod/lib/index.mjs
+// node_modules/zod/lib/index.mjs
 var util;
 (function(util2) {
   util2.assertEqual = (val) => val;
