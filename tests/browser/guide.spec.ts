@@ -7,6 +7,59 @@ test.beforeEach(async ({ page }) => {
   await openGuide(page);
 });
 
+test('分析资料支持分组批量选择、搜索和多人同步，保持勾选焦点', async ({ page }) => {
+  await page.getByRole('button', { name: '关闭', exact: true }).click();
+  await page.evaluate(() => {
+    const c = window.SillyTavern?.getContext();
+    const character = c?.characters[0];
+    if (!c || !character || typeof character !== 'object') throw new Error('缺少测试角色');
+    Object.assign(character, {
+      data: {
+        character_book: {
+          entries: [
+            { id: 1, comment: '青岚档案', content: '姓名：青岚\n身份：调查员' },
+            { id: 2, comment: '白榆档案', content: '姓名：白榆\n身份：向导' },
+            { id: 3, comment: '会面', content: '青岚与白榆在钟楼会面。' },
+          ],
+        },
+      },
+    });
+  });
+  await openGuide(page);
+  await page.getByRole('button', { name: '取消全选资料', exact: true }).click();
+  const group = page
+    .locator('.sg-source-group')
+    .filter({ has: page.locator('summary', { hasText: '青岚' }) });
+  await group.getByRole('button', { name: '全选本组', exact: true }).click();
+  for (const checkbox of await group.getByRole('checkbox').all()) await expect(checkbox).toBeChecked();
+  await group.getByRole('checkbox').first().uncheck();
+  await expect(group.getByRole('checkbox').first()).toBeFocused();
+  await expect(page.locator('.sg-source-group').filter({ hasText: '白榆（1/2）' })).toHaveCount(1);
+  await page.getByRole('button', { name: '全选资料', exact: true }).click();
+  await page.getByRole('textbox', { name: '搜索分析资料' }).fill('没有这个资料');
+  await expect(page.getByText('没有匹配资料', { exact: true })).toBeVisible();
+  await page.getByRole('textbox', { name: '搜索分析资料' }).fill('');
+  await page.screenshot({ path: 'test-results/analysis-selection.png', fullPage: true });
+});
+
+test('世界书仅列当前卡主绑定与当前聊天绑定，不列无关书', async ({ page }) => {
+  await page.getByRole('button', { name: '关闭', exact: true }).click();
+  await page.evaluate(() => {
+    const c = window.SillyTavern?.getContext();
+    const character = c?.characters[0];
+    if (!c || !character || typeof character !== 'object') throw new Error('缺少测试角色');
+    Object.assign(character, { data: { extensions: { world: '当前卡主书' } } });
+    c.chatMetadata = { world_info: '当前聊天书' };
+    c.getWorldInfoNames = () => ['当前卡主书', '当前聊天书', '其他角色的书'];
+    c.loadWorldInfo = async () => ({ entries: {} });
+  });
+  await openGuide(page);
+  await page.getByText('当前角色关联世界书', { exact: true }).click();
+  await expect(page.getByRole('checkbox', { name: '当前卡主书', exact: true })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: '当前聊天书', exact: true })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: '其他角色的书', exact: true })).toHaveCount(0);
+});
+
 test('多人世界书默认完整显示，可点击人物筛选，概览按钮有间距', async ({ page }) => {
   await page.locator('.sg-header').getByRole('button', { name: '关闭', exact: true }).click();
   await page.evaluate(() => {

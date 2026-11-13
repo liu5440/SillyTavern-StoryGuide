@@ -31,7 +31,7 @@ export function buildLocalCatalog(snapshot: ContextSnapshot): Story {
       location: '',
       characters: [],
       time: '',
-      chapter: '',
+      chapter: '原始资料（不代表事件）',
       provenance: 'explicit',
       refs: [{ sourceId: source.id, quote: source.text.slice(0, 2000) }],
       // 玩家主动建立的原文目录不是尚未触发的未来剧情，默认可见。

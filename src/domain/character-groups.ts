@@ -17,7 +17,7 @@ function validName(value: string): boolean {
   return value.length >= 2 && value.length <= 30 && !/[<>={}\[\]\r\n]/u.test(value);
 }
 /** 姓名字段优先；短标题必须同时有至少两个人物档案特征，不能把所有条目标题当人名。 */
-function sourceNames(source: Source): string[] {
+export function sourceNames(source: Source): string[] {
   const names = new Set<string>();
   const pattern =
     /(?:^|[\n{,，])\s*(?:[-*#]\s*)?["'“”*]*(?:姓名|角色姓名|角色名|人物姓名|人物名)["'“”*]*\s*[:：]\s*["'“”]*([^\n\r"'“”<>，,;；。{}\[\]|]+)/gu;
@@ -41,6 +41,20 @@ function sourceNames(source: Source): string[] {
       names.add(title);
   }
   return [...names];
+}
+
+/** 选择资料时即建立索引，不依赖AI已生成事件。关键词提及只是浏览归组。 */
+export function sourceGroups(sources: Source[]): { label: string; sourceIds: string[] }[] {
+  const roster = [...new Set(sources.flatMap(sourceNames))];
+  const groups = roster.map((name) => ({
+    label: name,
+    sourceIds: sources.filter((s) => sourceNames(s).includes(name) || s.text.includes(name)).map((s) => s.id),
+  }));
+  const assigned = new Set(groups.flatMap((group) => group.sourceIds));
+  return [
+    ...groups,
+    { label: '公共／未分类', sourceIds: sources.filter((s) => !assigned.has(s.id)).map((s) => s.id) },
+  ];
 }
 
 /** 仅生成浏览索引，不改变节点、引用或剧情关系；多人条目可同时归入多个分组。 */

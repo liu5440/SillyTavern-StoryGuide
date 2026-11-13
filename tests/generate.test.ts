@@ -20,6 +20,37 @@ const draft = (): Pick<Story, 'title' | 'summary' | 'nodes' | 'edges'> => {
   const story = parseStory(f);
   return { title: story.title, summary: story.summary, nodes: story.nodes, edges: story.edges };
 };
+
+test('分析中的错误摘录不触发整批修复，资料保留且明确提示待核对', async () => {
+  const parsed = draft();
+  parsed.nodes = [
+    {
+      ...parsed.nodes[0]!,
+      type: 'event',
+      provenance: 'explicit',
+      refs: [{ sourceId: source.id, quote: '模型改写的错误摘录' }],
+    },
+  ];
+  parsed.edges = [];
+  let calls = 0;
+  const host = {
+    generate: async () => {
+      calls++;
+      return JSON.stringify(parsed);
+    },
+    isCurrent: () => true,
+  } as unknown as Host;
+  const story = await generateStory(
+    host,
+    { snapshot, mode: 'analyze', brief: '' },
+    new AbortController().signal,
+    () => {},
+  );
+  assert.equal(calls, 1);
+  assert.match(story.summary, /待核对/);
+  assert.equal(story.nodes.find((node) => node.id === parsed.nodes[0]!.id)?.provenance, 'inferred');
+  assert.ok(story.nodes.some((node) => node.summary === source.text));
+});
 test('解析格式修复保留本批来源和解析约束，允许没有固定路线', async () => {
   const parsed = draft();
   parsed.nodes = [

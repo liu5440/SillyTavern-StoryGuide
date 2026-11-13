@@ -127,7 +127,7 @@ export class TavernHost implements Host {
       .parse(module);
     const name = character.avatar.replace(/\.[^/.]+$/, '');
     extra.world_info.charLore?.find((l) => l.name === name)?.extraBooks.forEach((b) => selected.add(b));
-    return { all: [...new Set([...(c.getWorldInfoNames?.() ?? []), ...selected])], selected: [...selected] };
+    return { all: [...selected], selected: [...selected] };
   }
   async snapshot(books?: string[]): Promise<ContextSnapshot> {
     const { c, character, chatKey } = this.identity();

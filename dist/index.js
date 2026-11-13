@@ -4499,7 +4499,7 @@ function diagnosticReport() {
   return {
     format: "story-guide-diagnostics",
     schemaVersion: 1,
-    version: "0.6.0",
+    version: "0.6.1",
     modelSource: "SillyTavern.getContext().generateRaw / \u9152\u9986\u53C2\u6570\u6784\u9020\u4E0ESSE\u89E3\u6790",
     retention: "\u5F53\u524D\u9875\u9762\u5185\u5B58\u6700\u8FD1100\u6761\uFF0C\u5237\u65B0\u6E05\u7A7A",
     entries: entries.map((entry) => ({ ...entry, fields: entry.fields?.slice() }))
@@ -4736,7 +4736,7 @@ var TavernHost = class {
     }).passthrough().parse(module);
     const name = character.avatar.replace(/\.[^/.]+$/, "");
     extra.world_info.charLore?.find((l) => l.name === name)?.extraBooks.forEach((b) => selected.add(b));
-    return { all: [.../* @__PURE__ */ new Set([...c.getWorldInfoNames?.() ?? [], ...selected])], selected: [...selected] };
+    return { all: [...selected], selected: [...selected] };
   }
   async snapshot(books) {
     const { c, character, chatKey } = this.identity();
@@ -5212,6 +5212,7 @@ characters \u586B\u5199\u8BE5\u4E8B\u4EF6\u6D89\u53CA\u7684\u4EBA\u7269\u59D3\u5
 edges \u6BCF\u9879\u4E25\u683C\u5305\u542B id, from, to, label(\u9009\u62E9\u6216\u8854\u63A5\u6587\u5B57), condition(\u81EA\u7136\u8BED\u8A00\u6761\u4EF6\uFF0C\u672A\u77E5\u5199\u9700\u73A9\u5BB6\u5224\u65AD), provenance, refs\u3002
 \u8282\u70B9\u548C\u8FDE\u7EBF ID \u5404\u81EA\u552F\u4E00\uFF0Cfrom/to \u5FC5\u987B\u6307\u5411\u5DF2\u6709\u8282\u70B9\uFF0C\u7981\u6B62\u73AF\u8DEF\uFF1B\u89E3\u6790\u6A21\u5F0F\u4E2D\u6CA1\u6709\u539F\u6587\u652F\u6301\u7684\u8DEF\u7EBF\u65F6 edges \u7528\u7A7A\u6570\u7EC4\uFF0C\u4E0D\u4E3A\u6EE1\u8DB3\u56FE\u7ED3\u6784\u7F16\u9020\u7ED3\u5C40\uFF1B\u521B\u4F5C\u6A21\u5F0F\u6309\u4EFB\u52A1\u8981\u6C42\u521B\u5EFA\u539F\u521B\u5206\u652F\u3002
 \u6765\u6E90 explicit \u5FC5\u987B refs \u5F15\u7528\u63D0\u4F9B\u7684 sourceId \u4E0E\u539F\u6587\u9010\u5B57\u6458\u5F55\uFF1B\u6CA1\u6709\u4F9D\u636E\u7528 inferred\uFF0C\u4E0D\u8BB8\u4F2A\u9020\u5F15\u7528\u3002\u539F\u521B\u7528 original\u3002\u8FB9\u7684\u6761\u4EF6\u548C\u5148\u540E\u987A\u5E8F\u6CA1\u6709\u539F\u6587\u4F9D\u636E\u65F6\u540C\u6837\u6807 inferred\u3002
+\u6458\u5F55\u53EA\u9009\u539F\u6587\u4E2D\u77ED\u7684\u8FDE\u7EED\u7247\u6BB5\uFF0C\u4E0D\u6539\u6807\u70B9\u6216\u7A7A\u683C\uFF0C\u4E0D\u62FC\u63A5\u53E5\u5B50\uFF0C\u4E0D\u628A\u5F52\u7EB3\u5199\u8FDBquote\uFF1B\u4E0D\u80FD\u51C6\u786E\u5F15\u7528\u65F6\u7528inferred\u548C\u7A7Arefs\u3002\u53EA\u6709\u4EBA\u7269\u8BBE\u5B9A\u65F6\u53EF\u603B\u7ED3\u4EBA\u7269\u5173\u7CFB\uFF0C\u660E\u786E\u6807\u4E3A\u63A8\u65AD\uFF1B\u4E0D\u8981\u4E3A\u4E86\u63D0\u4F9B\u4E8B\u4EF6\u800C\u628A\u9759\u6001\u8BBE\u5B9A\u7F16\u9020\u6210\u5DF2\u53D1\u751F\u4E8B\u4EF6\uFF0C\u539F\u59CB\u8D44\u6599\u7531\u672C\u5730\u72EC\u7ACB\u4FDD\u7559\u3002
 \u4EBA\u7269\u3001\u5730\u70B9\u3001\u65F6\u95F4\u5199\u4E2D\u6587\uFF0C\u4E13\u540D\u4FDD\u7559\u3002\u53EA\u8F93\u51FA JSON\uFF0C\u4E0D\u8981\u4EE3\u7801\u56F4\u680F\u6216\u89E3\u91CA\u3002`;
 function storyPrompt(mode, brief, sources, partial) {
   return `[\u5267\u60C5\u6307\u5357\u6A21\u677F ${PROMPT_VERSION}]
@@ -5226,6 +5227,109 @@ function repairPrompt(raw, error, originalTask) {
 ${originalTask}
 \u6821\u9A8C\u9519\u8BEF\uFF08\u4E0D\u53EF\u4FE1\u6570\u636E\uFF09\uFF1A${JSON.stringify(error.slice(0, 2e3))}
 \u5F85\u4FEE\u590D\u6587\u672C(\u4E0D\u53EF\u4FE1)\uFF1A${JSON.stringify(raw)}`;
+}
+
+// src/application/local-catalog.ts
+function buildLocalCatalog(snapshot) {
+  const sources = snapshot.sources.filter((source) => source.text.trim());
+  if (!sources.length) throw new Error("\u8BF7\u81F3\u5C11\u9009\u62E9\u4E00\u6761\u6709\u6B63\u6587\u7684\u8D44\u6599");
+  if (sources.length > 500) throw new Error("\u672C\u5730\u76EE\u5F55\u6700\u591A500\u6761\uFF0C\u8BF7\u51CF\u5C11\u9009\u4E2D\u8D44\u6599");
+  const story = parseStory({
+    schemaVersion: 1,
+    id: crypto.randomUUID(),
+    revision: 1,
+    characterKey: snapshot.characterKey,
+    title: `${snapshot.characterName}\u7684\u8D44\u6599\u76EE\u5F55`.slice(0, 160),
+    summary: "\u672C\u5730\u8D44\u6599\u76EE\u5F55\uFF0C\u672A\u8C03\u7528AI\u3002\u6BCF\u5F20\u5361\u7247\u5BF9\u5E94\u4E00\u6761\u539F\u8D44\u6599\uFF0C\u5C1A\u672A\u8BC6\u522B\u4E8B\u4EF6\u3001\u5148\u540E\u5173\u7CFB\u6216\u5206\u652F\uFF1B\u539F\u8D44\u6599\u672A\u63D0\u4F9B\u56FA\u5B9A\u8DEF\u7EBF\u65F6\uFF0C\u4E0D\u81EA\u52A8\u8865\u9020\u8FDE\u7EBF\u3002",
+    mode: "analyze",
+    status: "draft",
+    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+    sources,
+    edges: [],
+    positions: {},
+    nodes: sources.map((source, index) => ({
+      id: `source-${index + 1}`,
+      type: "event",
+      title: source.label.slice(0, 160) || `\u8D44\u6599${index + 1}`,
+      summary: source.text.length > 19e3 ? `\u3010\u539F\u6587\u6458\u5F55\uFF0C\u5B8C\u6574\u5185\u5BB9\u89C1\u6765\u6E90\u3011
+${source.text.slice(0, 19e3)}` : source.text,
+      location: "",
+      characters: [],
+      time: "",
+      chapter: "\u539F\u59CB\u8D44\u6599\uFF08\u4E0D\u4EE3\u8868\u4E8B\u4EF6\uFF09",
+      provenance: "explicit",
+      refs: [{ sourceId: source.id, quote: source.text.slice(0, 2e3) }],
+      // 玩家主动建立的原文目录不是尚未触发的未来剧情，默认可见。
+      spoiler: false,
+      locked: false
+    }))
+  });
+  const errors = validateGraph(story);
+  if (errors.length) throw new Error(errors.join("\uFF1B"));
+  return story;
+}
+
+// src/application/analysis-result.ts
+function reviewAnalysisReferences(story) {
+  const sources = new Map(story.sources.map((s) => [s.id, s.text]));
+  let warnings = 0;
+  for (const item of [...story.nodes, ...story.edges]) {
+    if (item.provenance === "original" || item.provenance === "user") continue;
+    const valid = item.refs.filter((ref) => sources.get(ref.sourceId)?.includes(ref.quote));
+    if (valid.length === item.refs.length) continue;
+    warnings++;
+    item.refs = valid;
+    item.provenance = "inferred";
+    if ("summary" in item)
+      item.summary = `\u3010\u5F15\u7528\u672A\u901A\u8FC7\u6821\u9A8C\uFF0C\u5F85\u6838\u5BF9\u7684\u6A21\u578B\u63A8\u65AD\u3011
+${item.summary}`.slice(0, 2e4);
+    else item.label = `\u3010\u5F15\u7528\u5F85\u6838\u5BF9\u3011${item.label}`.slice(0, 2e4);
+  }
+  if (warnings)
+    story.summary = `\u3010${warnings}\u9879\u5F15\u7528\u672A\u901A\u8FC7\u6821\u9A8C\uFF0C\u76F8\u5173\u5185\u5BB9\u4EC5\u4F5C\u4E3A\u5F85\u6838\u5BF9\u63A8\u65AD\u3011
+${story.summary}`.slice(
+      0,
+      2e4
+    );
+  return warnings;
+}
+function attachAnalysisSources(story, snapshot) {
+  if (snapshot.sources.length + story.nodes.length > 500) {
+    return parseStory({
+      ...story,
+      summary: `\u3010\u8D44\u6599\u4E0E\u4E8B\u4EF6\u5408\u8BA1\u8D85\u8FC7500\u9879\uFF0C\u539F\u6587\u4FDD\u7559\u5728\u201C\u67E5\u770B\u539F\u59CB\u8D44\u6599\u201D\uFF0C\u4E0D\u91CD\u590D\u52A0\u5165\u4E8B\u4EF6\u5217\u8868\u3011
+${story.summary}`.slice(
+        0,
+        2e4
+      )
+    });
+  }
+  const catalog = buildLocalCatalog(snapshot);
+  const ids = new Set(story.nodes.map((node) => node.id));
+  for (const node of catalog.nodes) {
+    let id2 = `material-${node.id}`;
+    while (ids.has(id2)) id2 = `_${id2}`;
+    ids.add(id2);
+    node.id = id2;
+    node.title = `\u8D44\u6599\uFF5C${node.title}`.slice(0, 160);
+    node.chapter = "\u539F\u59CB\u8D44\u6599\uFF08\u4E0D\u4EE3\u8868\u4E8B\u4EF6\uFF09";
+  }
+  const combined = parseStory({ ...story, nodes: [...catalog.nodes, ...story.nodes] });
+  const errors = validateGraph(combined);
+  if (errors.length) throw new Error(errors.join("\uFF1B"));
+  return combined;
+}
+
+// src/failed-response.ts
+var last;
+function setFailedResponse(text2, stage, reason) {
+  last = { text: text2, stage, reason, time: (/* @__PURE__ */ new Date()).toISOString() };
+}
+function failedResponse() {
+  return last ? { ...last } : void 0;
+}
+function clearFailedResponse() {
+  last = void 0;
 }
 
 // src/application/generate.ts
@@ -5296,7 +5400,7 @@ var GenerationError = class extends Error {
     this.partials = partials;
   }
 };
-function decodeDraft(raw, snapshot, mode) {
+function decodeDraft(raw, snapshot, mode, reviewReferences = false) {
   const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   const draft = draftSchema.parse(JSON.parse(cleaned));
   const story = parseStory({
@@ -5311,6 +5415,17 @@ function decodeDraft(raw, snapshot, mode) {
     sources: snapshot.sources,
     positions: {}
   });
+  if (reviewReferences && mode === "analyze") {
+    const count = reviewAnalysisReferences(story);
+    if (count)
+      recordDiagnostic({
+        requestId: crypto.randomUUID(),
+        event: "validation",
+        stage: "\u89E3\u6790",
+        reason: "\u65E0\u6548\u5F15\u7528\u5DF2\u79FB\u9664\uFF0C\u76F8\u5173\u5185\u5BB9\u964D\u4E3A\u5F85\u6838\u5BF9\u63A8\u65AD",
+        fields: ["refs.quote: unverified_inference"]
+      });
+  }
   const errors = validateGraph(story);
   if (errors.length) throw new DraftGraphError(errors);
   return story;
@@ -5371,9 +5486,10 @@ async function generateStory(host, input, signal, progress) {
     const raw = await requestModel(host, prompt, signal, stage, progress);
     guard();
     try {
-      return decodeDraft(raw, context, outputMode);
+      return decodeDraft(raw, context, outputMode, outputMode === "analyze");
     } catch (error) {
       logValidation(error, false);
+      setFailedResponse(raw, stage, validationReason(error));
       const reason = validationReason(error);
       const fixed = await requestModel(
         host,
@@ -5384,9 +5500,10 @@ async function generateStory(host, input, signal, progress) {
       );
       guard();
       try {
-        return decodeDraft(fixed, context, outputMode);
+        return decodeDraft(fixed, context, outputMode, outputMode === "analyze");
       } catch (error2) {
         logValidation(error2, true);
+        setFailedResponse(fixed, "\u4FEE\u590D", validationReason(error2));
         throw new Error(
           `\u683C\u5F0F\u4FEE\u590D\u540E\u4ECD\u672A\u901A\u8FC7\u6821\u9A8C\uFF0C\u5DF2\u505C\u6B62\uFF1B\u9996\u6B21\u539F\u56E0\uFF1A${reason}\uFF1B\u4FEE\u590D\u540E\u539F\u56E0\uFF1A${validationReason(error2)}\u3002\u8BF7\u51CF\u5C11\u8D44\u6599\u8303\u56F4\u6216\u68C0\u67E5\u6A21\u578B\u8F93\u51FA\u80FD\u529B\u540E\u91CD\u8BD5\u3002`
         );
@@ -5408,7 +5525,7 @@ async function generateStory(host, input, signal, progress) {
       stage = `\u6B63\u5728\u89E3\u6790\u7B2C ${i + 1} / ${batches.length} \u6279\u8D44\u6599\u2026`;
       partials.push(await request(storyPrompt(mode, brief, batches[i]), snapshot));
     }
-    if (partials.length === 1) return partials[0];
+    if (partials.length === 1) return attachAnalysisSources(partials[0], snapshot);
     stage = "\u6B63\u5728\u5408\u5E76\u4E8B\u4EF6\u4E0E\u8DEF\u7EBF\u2026";
     const drafts = partials.map((s) => ({
       title: s.title,
@@ -5418,7 +5535,7 @@ async function generateStory(host, input, signal, progress) {
     }));
     if (JSON.stringify(drafts).length > 9e4) throw new Error("\u5206\u6279\u7ED3\u679C\u8FC7\u5927\uFF0C\u8BF7\u5206\u5F00\u89E3\u6790\uFF1B\u5DF2\u4FDD\u7559\u5B8C\u6210\u6279\u6B21");
     const combined = await request(storyPrompt(mode, brief, [], drafts), snapshot);
-    return combined;
+    return attachAnalysisSources(combined, snapshot);
   } catch (error) {
     throw new GenerationError(error instanceof Error ? error.message : "\u751F\u6210\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5", partials);
   }
@@ -6032,6 +6149,19 @@ function openDiagnostics() {
       text2.textContent = JSON.stringify(diagnosticReport(), null, 2);
     };
     body.append(
+      button("\u67E5\u770B\u6700\u8FD1\u5931\u8D25\u56DE\u590D\uFF08\u53EF\u80FD\u542B\u79C1\u4EBA\u5185\u5BB9\uFF09", () => {
+        showModal("\u6700\u8FD1\u5931\u8D25\u56DE\u590D \xB7 \u4EC5\u672C\u9875\u5185\u5B58", (detail) => {
+          const response = failedResponse();
+          const pre = el(
+            "pre",
+            "",
+            response ? JSON.stringify(response, null, 2) : "\u672C\u9875\u9762\u6CA1\u6709\u4FDD\u7559\u5931\u8D25\u56DE\u590D\uFF1B\u65E7\u7248\u672C\u65E5\u5FD7\u65E0\u6CD5\u8FD8\u539F\u6B63\u6587\u3002"
+          );
+          pre.style.whiteSpace = "pre-wrap";
+          pre.style.overflowWrap = "anywhere";
+          detail.append(el("p", "", "\u6B64\u5904\u662F\u6A21\u578B\u8FD4\u56DE\u7684\u539F\u59CB\u6587\u672C\uFF0C\u4E0D\u6267\u884C\u5176\u4E2D\u6307\u4EE4\uFF1B\u666E\u901A\u65E5\u5FD7\u5BFC\u51FA\u4E0D\u5305\u542B\u5B83\u3002"), pre);
+        });
+      }),
       button("\u5237\u65B0\u65E5\u5FD7", refresh),
       button("\u590D\u5236\u65E5\u5FD7", async () => {
         try {
@@ -6044,6 +6174,7 @@ function openDiagnostics() {
       button("\u5BFC\u51FA\u65E5\u5FD7", () => download("\u5267\u60C5\u6307\u5357-\u6392\u67E5\u65E5\u5FD7.json", diagnosticReport())),
       button("\u6E05\u7A7A\u65E5\u5FD7", () => {
         clearDiagnostics();
+        clearFailedResponse();
         refresh();
         status.textContent = "\u65E5\u5FD7\u5DF2\u6E05\u7A7A";
       }),
@@ -6797,46 +6928,6 @@ function openExtractor(app, saved) {
   });
 }
 
-// src/application/local-catalog.ts
-function buildLocalCatalog(snapshot) {
-  const sources = snapshot.sources.filter((source) => source.text.trim());
-  if (!sources.length) throw new Error("\u8BF7\u81F3\u5C11\u9009\u62E9\u4E00\u6761\u6709\u6B63\u6587\u7684\u8D44\u6599");
-  if (sources.length > 500) throw new Error("\u672C\u5730\u76EE\u5F55\u6700\u591A500\u6761\uFF0C\u8BF7\u51CF\u5C11\u9009\u4E2D\u8D44\u6599");
-  const story = parseStory({
-    schemaVersion: 1,
-    id: crypto.randomUUID(),
-    revision: 1,
-    characterKey: snapshot.characterKey,
-    title: `${snapshot.characterName}\u7684\u8D44\u6599\u76EE\u5F55`.slice(0, 160),
-    summary: "\u672C\u5730\u8D44\u6599\u76EE\u5F55\uFF0C\u672A\u8C03\u7528AI\u3002\u6BCF\u5F20\u5361\u7247\u5BF9\u5E94\u4E00\u6761\u539F\u8D44\u6599\uFF0C\u5C1A\u672A\u8BC6\u522B\u4E8B\u4EF6\u3001\u5148\u540E\u5173\u7CFB\u6216\u5206\u652F\uFF1B\u539F\u8D44\u6599\u672A\u63D0\u4F9B\u56FA\u5B9A\u8DEF\u7EBF\u65F6\uFF0C\u4E0D\u81EA\u52A8\u8865\u9020\u8FDE\u7EBF\u3002",
-    mode: "analyze",
-    status: "draft",
-    createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-    sources,
-    edges: [],
-    positions: {},
-    nodes: sources.map((source, index) => ({
-      id: `source-${index + 1}`,
-      type: "event",
-      title: source.label.slice(0, 160) || `\u8D44\u6599${index + 1}`,
-      summary: source.text.length > 19e3 ? `\u3010\u539F\u6587\u6458\u5F55\uFF0C\u5B8C\u6574\u5185\u5BB9\u89C1\u6765\u6E90\u3011
-${source.text.slice(0, 19e3)}` : source.text,
-      location: "",
-      characters: [],
-      time: "",
-      chapter: "",
-      provenance: "explicit",
-      refs: [{ sourceId: source.id, quote: source.text.slice(0, 2e3) }],
-      // 玩家主动建立的原文目录不是尚未触发的未来剧情，默认可见。
-      spoiler: false,
-      locked: false
-    }))
-  });
-  const errors = validateGraph(story);
-  if (errors.length) throw new Error(errors.join("\uFF1B"));
-  return story;
-}
-
 // src/domain/character-groups.ts
 function cleanName(value) {
   return value.replace(/[*#"'“”]/gu, "").split(/[（(\/、]/u)[0]?.trim() ?? "";
@@ -6862,6 +6953,18 @@ function sourceNames(source) {
       names.add(title);
   }
   return [...names];
+}
+function sourceGroups(sources) {
+  const roster = [...new Set(sources.flatMap(sourceNames))];
+  const groups = roster.map((name) => ({
+    label: name,
+    sourceIds: sources.filter((s) => sourceNames(s).includes(name) || s.text.includes(name)).map((s) => s.id)
+  }));
+  const assigned = new Set(groups.flatMap((group) => group.sourceIds));
+  return [
+    ...groups,
+    { label: "\u516C\u5171\uFF0F\u672A\u5206\u7C7B", sourceIds: sources.filter((s) => !assigned.has(s.id)).map((s) => s.id) }
+  ];
 }
 function characterGroups(story) {
   const roster = new Set(story.sources.flatMap(sourceNames));
@@ -6892,6 +6995,134 @@ function characterGroups(story) {
     ...[...map].sort(([a], [b]) => a.localeCompare(b, "zh-CN")).map(([name, nodeIds]) => ({ key: `character:${name}`, label: name, nodeIds })),
     { key: "unassigned", label: "\u516C\u5171\uFF0F\u672A\u5206\u7C7B", nodeIds: unassigned }
   ];
+}
+
+// src/ui/source-selection.ts
+function sourceSelection(sources, selected) {
+  const root = el("details", "sg-details");
+  root.open = true;
+  root.append(el("summary", "", `\u5206\u6790\u8D44\u6599\uFF08${sources.length} \u6761\uFF09`));
+  const search = el("input");
+  search.placeholder = "\u641C\u7D22\u4EBA\u7269\u6216\u8D44\u6599";
+  search.setAttribute("aria-label", "\u641C\u7D22\u5206\u6790\u8D44\u6599");
+  const count = el("p", "sg-muted");
+  const list = el("div", "sg-source-list");
+  const groups = sourceGroups(sources);
+  let refresh = () => {
+  };
+  const update = (ids, yes) => {
+    for (const id2 of ids)
+      if (yes) selected.add(id2);
+      else selected.delete(id2);
+    refresh();
+  };
+  const toolbar = el("div", "sg-toolbar");
+  toolbar.append(
+    button(
+      "\u5168\u9009\u8D44\u6599",
+      () => update(
+        sources.map((s) => s.id),
+        true
+      )
+    ),
+    button(
+      "\u53D6\u6D88\u5168\u9009\u8D44\u6599",
+      () => update(
+        sources.map((s) => s.id),
+        false
+      )
+    )
+  );
+  const render = () => {
+    const sync = [];
+    sync.push(() => {
+      count.textContent = `\u5DF2\u9009 ${sources.filter((s) => selected.has(s.id)).length} / ${sources.length} \u6761 \xB7 ${sources.filter((s) => selected.has(s.id)).reduce((n, s) => n + s.text.length, 0)} \u5B57\u7B26`;
+    });
+    list.replaceChildren();
+    const term = search.value.trim().toLocaleLowerCase();
+    for (const group of groups) {
+      const visible = sources.filter(
+        (s) => group.sourceIds.includes(s.id) && (!term || `${group.label}
+${s.label}
+${s.text}`.toLocaleLowerCase().includes(term))
+      );
+      if (!visible.length) continue;
+      const section = el("details", "sg-source-group");
+      section.open = true;
+      const heading = el("summary");
+      sync.push(() => {
+        heading.textContent = `${group.label}\uFF08${visible.filter((s) => selected.has(s.id)).length}/${visible.length}\uFF09`;
+      });
+      section.append(heading);
+      const actions = el("div", "sg-toolbar");
+      actions.append(
+        button(
+          "\u5168\u9009\u672C\u7EC4",
+          () => update(
+            visible.map((s) => s.id),
+            true
+          )
+        ),
+        button(
+          "\u53D6\u6D88\u672C\u7EC4",
+          () => update(
+            visible.map((s) => s.id),
+            false
+          )
+        )
+      );
+      section.append(actions);
+      for (const source of visible) {
+        const row = check(
+          `${source.label}${source.disabled ? "\uFF08\u539F\u6761\u76EE\u5DF2\u7981\u7528\uFF09" : ""}`,
+          selected.has(source.id),
+          (yes) => update([source.id], yes)
+        );
+        sync.push(() => {
+          row.input.checked = selected.has(source.id);
+        });
+        section.append(row.root);
+      }
+      list.append(section);
+    }
+    if (!list.childElementCount) list.append(el("p", "sg-muted", "\u6CA1\u6709\u5339\u914D\u8D44\u6599"));
+    refresh = () => sync.forEach((update2) => update2());
+    refresh();
+  };
+  search.addEventListener("input", render);
+  root.append(
+    search,
+    toolbar,
+    count,
+    el(
+      "p",
+      "sg-muted",
+      "\u6309\u59D3\u540D\u4E0E\u539F\u6587\u63D0\u53CA\u8F85\u52A9\u5206\u7EC4\uFF1B\u591A\u4EBA\u8D44\u6599\u53EF\u51FA\u73B0\u5728\u591A\u4E2A\u7EC4\uFF0C\u52FE\u9009\u72B6\u6001\u540C\u6B65\u3002\u641C\u7D22\u540E\u7684\u7EC4\u64CD\u4F5C\u4EC5\u5F71\u54CD\u663E\u793A\u8D44\u6599\u3002"
+    ),
+    list
+  );
+  render();
+  return root;
+}
+function sourceCatalog(sources) {
+  const root = el("div");
+  for (const group of sourceGroups(sources)) {
+    if (!group.sourceIds.length) continue;
+    const section = el("details", "sg-details");
+    section.open = true;
+    section.append(el("summary", "", `${group.label}\uFF08${group.sourceIds.length}\uFF09`));
+    for (const source of sources.filter((s) => group.sourceIds.includes(s.id))) {
+      const row = el("details");
+      row.append(el("summary", "", source.label));
+      const text2 = el("pre", "", source.text);
+      text2.style.whiteSpace = "pre-wrap";
+      text2.style.overflowWrap = "anywhere";
+      row.append(text2);
+      section.append(row);
+    }
+    root.append(section);
+  }
+  return root;
 }
 
 // src/ui/panel.ts
@@ -7105,7 +7336,7 @@ var GuidePanel = class {
     const options = await this.app.host.bookOptions();
     if (snapshot !== this.snapshot) return;
     const books = el("details", "sg-details");
-    books.append(el("summary", "", "\u9009\u62E9\u4E16\u754C\u4E66"));
+    books.append(el("summary", "", "\u5F53\u524D\u89D2\u8272\u5173\u8054\u4E16\u754C\u4E66"));
     const selectedBooks = new Set(snapshot.bookNames);
     for (const name of options.all)
       books.append(
@@ -7114,7 +7345,10 @@ var GuidePanel = class {
           else selectedBooks.delete(name);
         }).root
       );
-    if (!options.all.length) books.append(el("p", "sg-muted", "\u6CA1\u6709\u4E16\u754C\u4E66\u4E5F\u80FD\u521B\u4F5C\u6545\u4E8B\u3002"));
+    if (!options.all.length)
+      books.append(
+        el("p", "sg-muted", "\u6CA1\u6709\u5916\u90E8\u5173\u8054\u4E66\uFF1B\u5185\u5D4C\u4E16\u754C\u4E66\u5DF2\u81EA\u52A8\u8BFB\u53D6\u3002\u4E5F\u53EF\u5728\u9152\u9986\u4E3A\u5F53\u524D\u89D2\u8272\u7ED1\u5B9A\u4E16\u754C\u4E66\u3002")
+      );
     books.append(
       button(
         "\u8BFB\u53D6\u6240\u9009\u4E16\u754C\u4E66",
@@ -7125,21 +7359,7 @@ var GuidePanel = class {
         })
       )
     );
-    const sourceList = el("details", "sg-details");
-    sourceList.append(el("summary", "", `\u5206\u6790\u8D44\u6599\uFF08${snapshot.sources.length} \u6761\uFF09`));
-    const list = el("div", "sg-source-list");
-    for (const source of snapshot.sources)
-      list.append(
-        check(
-          `${source.label}${source.disabled ? "\uFF08\u539F\u6761\u76EE\u5DF2\u7981\u7528\uFF09" : ""}`,
-          this.selectedSources.has(source.id),
-          (yes) => {
-            if (yes) this.selectedSources.add(source.id);
-            else this.selectedSources.delete(source.id);
-          }
-        ).root
-      );
-    sourceList.append(list);
+    const sourceList = sourceSelection(snapshot.sources, this.selectedSources);
     const generate = button(
       "\u751F\u6210\u6545\u4E8B\u8349\u7A3F",
       () => this.safe(async () => {
@@ -7418,6 +7638,12 @@ var GuidePanel = class {
         )
       );
     this.content.append(nav);
+    this.content.append(
+      button(
+        `\u67E5\u770B\u539F\u59CB\u8D44\u6599\uFF08${story.sources.length}\uFF09`,
+        () => showModal("\u539F\u59CB\u8D44\u6599 \xB7 \u4E0D\u4EE3\u8868\u4E8B\u4EF6", (body) => body.append(sourceCatalog(story.sources)))
+      )
+    );
     const groups = this.groupsFor(story);
     if (!groups.some((group) => group.key === this.characterFilter)) this.characterFilter = "all";
     const filters = el("section", "sg-character-groups");
@@ -7553,7 +7779,11 @@ var GuidePanel = class {
   nodeRow(node) {
     const row = button("", () => this.nodeDetail(node.id), "sg-event-row");
     row.append(
-      el("span", "sg-node-type", `${kinds[node.type]} \xB7 ${node.time || "\u65F6\u95F4\u672A\u77E5"}`),
+      el(
+        "span",
+        "sg-node-type",
+        node.chapter === "\u539F\u59CB\u8D44\u6599\uFF08\u4E0D\u4EE3\u8868\u4E8B\u4EF6\uFF09" ? "\u539F\u59CB\u8D44\u6599 \xB7 \u4E0D\u4EE3\u8868\u4E8B\u4EF6" : `${kinds[node.type]} \xB7 ${node.time || "\u65F6\u95F4\u672A\u77E5"}`
+      ),
       el("strong", "", node.title),
       el("span", "sg-event-summary", node.summary),
       el(

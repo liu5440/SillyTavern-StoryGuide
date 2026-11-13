@@ -17,6 +17,7 @@ import { openMaterials } from './materials';
 import { openDiagnostics } from './diagnostics';
 import { buildLocalCatalog } from '../application/local-catalog';
 import { characterGroups } from '../domain/character-groups';
+import { sourceSelection, sourceCatalog } from './source-selection';
 
 const provenance = { explicit: '原文明确', inferred: '模型推断', original: '原创故事', user: '用户设定' };
 const kinds = { start: '开场', event: '事件', choice: '选择', ending: '结局' };
@@ -231,7 +232,7 @@ export class GuidePanel {
     const options = await this.app.host.bookOptions();
     if (snapshot !== this.snapshot) return;
     const books = el('details', 'sg-details');
-    books.append(el('summary', '', '选择世界书'));
+    books.append(el('summary', '', '当前角色关联世界书'));
     const selectedBooks = new Set(snapshot.bookNames);
     for (const name of options.all)
       books.append(
@@ -240,7 +241,10 @@ export class GuidePanel {
           else selectedBooks.delete(name);
         }).root,
       );
-    if (!options.all.length) books.append(el('p', 'sg-muted', '没有世界书也能创作故事。'));
+    if (!options.all.length)
+      books.append(
+        el('p', 'sg-muted', '没有外部关联书；内嵌世界书已自动读取。也可在酒馆为当前角色绑定世界书。'),
+      );
     books.append(
       button('读取所选世界书', () =>
         this.safe(async () => {
@@ -250,21 +254,7 @@ export class GuidePanel {
         }),
       ),
     );
-    const sourceList = el('details', 'sg-details');
-    sourceList.append(el('summary', '', `分析资料（${snapshot.sources.length} 条）`));
-    const list = el('div', 'sg-source-list');
-    for (const source of snapshot.sources)
-      list.append(
-        check(
-          `${source.label}${source.disabled ? '（原条目已禁用）' : ''}`,
-          this.selectedSources.has(source.id),
-          (yes) => {
-            if (yes) this.selectedSources.add(source.id);
-            else this.selectedSources.delete(source.id);
-          },
-        ).root,
-      );
-    sourceList.append(list);
+    const sourceList = sourceSelection(snapshot.sources, this.selectedSources);
     const generate = button(
       '生成故事草稿',
       () =>
@@ -556,6 +546,11 @@ export class GuidePanel {
         ),
       );
     this.content.append(nav);
+    this.content.append(
+      button(`查看原始资料（${story.sources.length}）`, () =>
+        showModal('原始资料 · 不代表事件', (body) => body.append(sourceCatalog(story.sources))),
+      ),
+    );
     const groups = this.groupsFor(story);
     if (!groups.some((group) => group.key === this.characterFilter)) this.characterFilter = 'all';
     const filters = el('section', 'sg-character-groups');
@@ -695,7 +690,13 @@ export class GuidePanel {
   private nodeRow(node: StoryNode): HTMLElement {
     const row = button('', () => this.nodeDetail(node.id), 'sg-event-row');
     row.append(
-      el('span', 'sg-node-type', `${kinds[node.type]} · ${node.time || '时间未知'}`),
+      el(
+        'span',
+        'sg-node-type',
+        node.chapter === '原始资料（不代表事件）'
+          ? '原始资料 · 不代表事件'
+          : `${kinds[node.type]} · ${node.time || '时间未知'}`,
+      ),
       el('strong', '', node.title),
       el('span', 'sg-event-summary', node.summary),
       el(

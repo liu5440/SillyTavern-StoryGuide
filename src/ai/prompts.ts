@@ -5,6 +5,7 @@ characters 填写该事件涉及的人物姓名，多人物事件逐一列出；
 edges 每项严格包含 id, from, to, label(选择或衔接文字), condition(自然语言条件，未知写需玩家判断), provenance, refs。
 节点和连线 ID 各自唯一，from/to 必须指向已有节点，禁止环路；解析模式中没有原文支持的路线时 edges 用空数组，不为满足图结构编造结局；创作模式按任务要求创建原创分支。
 来源 explicit 必须 refs 引用提供的 sourceId 与原文逐字摘录；没有依据用 inferred，不许伪造引用。原创用 original。边的条件和先后顺序没有原文依据时同样标 inferred。
+摘录只选原文中短的连续片段，不改标点或空格，不拼接句子，不把归纳写进quote；不能准确引用时用inferred和空refs。只有人物设定时可总结人物关系，明确标为推断；不要为了提供事件而把静态设定编造成已发生事件，原始资料由本地独立保留。
 人物、地点、时间写中文，专名保留。只输出 JSON，不要代码围栏或解释。`;
 export function storyPrompt(
   mode: 'analyze' | 'create',

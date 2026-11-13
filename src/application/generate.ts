@@ -12,6 +12,8 @@ import {
 } from '../domain/story';
 import type { Host, ContextSnapshot } from '../host/tavern';
 import { storyPrompt, repairPrompt, draftContract } from '../ai/prompts';
+import { reviewAnalysisReferences, attachAnalysisSources } from './analysis-result';
+import { setFailedResponse } from '../failed-response';
 const draftSchema = z
   .object({ title: z.string(), summary: z.string(), nodes: z.array(nodeSchema), edges: z.array(edgeSchema) })
   .strict();
@@ -109,7 +111,12 @@ export class GenerationError extends Error {
     super(message);
   }
 }
-export function decodeDraft(raw: string, snapshot: ContextSnapshot, mode: 'analyze' | 'create'): Story {
+export function decodeDraft(
+  raw: string,
+  snapshot: ContextSnapshot,
+  mode: 'analyze' | 'create',
+  reviewReferences = false,
+): Story {
   const cleaned = raw
     .trim()
     .replace(/^```(?:json)?\s*/i, '')
@@ -127,6 +134,17 @@ export function decodeDraft(raw: string, snapshot: ContextSnapshot, mode: 'analy
     sources: snapshot.sources,
     positions: {},
   });
+  if (reviewReferences && mode === 'analyze') {
+    const count = reviewAnalysisReferences(story);
+    if (count)
+      recordDiagnostic({
+        requestId: crypto.randomUUID(),
+        event: 'validation',
+        stage: '解析',
+        reason: '无效引用已移除，相关内容降为待核对推断',
+        fields: ['refs.quote: unverified_inference'],
+      });
+  }
   const errors = validateGraph(story);
   if (errors.length) throw new DraftGraphError(errors);
   return story;
@@ -199,9 +217,10 @@ export async function generateStory(
     const raw = await requestModel(host, prompt, signal, stage, progress);
     guard();
     try {
-      return decodeDraft(raw, context, outputMode);
+      return decodeDraft(raw, context, outputMode, outputMode === 'analyze');
     } catch (error) {
       logValidation(error, false);
+      setFailedResponse(raw, stage, validationReason(error));
       const reason = validationReason(error);
       const fixed = await requestModel(
         host,
@@ -212,9 +231,10 @@ export async function generateStory(
       );
       guard();
       try {
-        return decodeDraft(fixed, context, outputMode);
+        return decodeDraft(fixed, context, outputMode, outputMode === 'analyze');
       } catch (error) {
         logValidation(error, true);
+        setFailedResponse(fixed, '修复', validationReason(error));
         throw new Error(
           `格式修复后仍未通过校验，已停止；首次原因：${reason}；修复后原因：${validationReason(error)}。请减少资料范围或检查模型输出能力后重试。`,
         );
@@ -236,7 +256,7 @@ export async function generateStory(
       stage = `正在解析第 ${i + 1} / ${batches.length} 批资料…`;
       partials.push(await request(storyPrompt(mode, brief, batches[i]), snapshot));
     }
-    if (partials.length === 1) return partials[0]!;
+    if (partials.length === 1) return attachAnalysisSources(partials[0]!, snapshot);
     stage = '正在合并事件与路线…';
     const drafts = partials.map((s) => ({
       title: s.title,
@@ -246,7 +266,7 @@ export async function generateStory(
     }));
     if (JSON.stringify(drafts).length > 90000) throw new Error('分批结果过大，请分开解析；已保留完成批次');
     const combined = await request(storyPrompt(mode, brief, [], drafts), snapshot);
-    return combined;
+    return attachAnalysisSources(combined, snapshot);
   } catch (error) {
     throw new GenerationError(error instanceof Error ? error.message : '生成失败，请重试', partials);
   }
