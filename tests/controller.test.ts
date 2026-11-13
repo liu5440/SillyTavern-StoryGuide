@@ -5,6 +5,8 @@ import { parseStory, visibleStory } from '../src/domain/story.ts';
 import { fixture } from './fixtures.ts';
 import type { TavernHost, ContextSnapshot } from '../src/host/tavern.ts';
 import type { Repository } from '../src/storage/repository.ts';
+import 'fake-indexeddb/auto';
+import { Repository as RealRepository } from '../src/storage/repository.ts';
 const snapshot: ContextSnapshot = {
   user: 'u',
   characterKey: 'alice.png',
@@ -68,4 +70,17 @@ test('边的条件和标签默认保守隐藏，不向建议或图泄漏秘密',
   const publicStory = visibleStory(story, undefined, false);
   assert.ok(!JSON.stringify(publicStory).includes('真凶'));
   assert.ok(JSON.stringify(visibleStory(story, undefined, true)).includes('真凶'));
+});
+test('采用导入草稿新版本时保留已恢复进度', async () => {
+  const host = { isCurrent: () => true, transcript: () => 't' } as unknown as TavernHost;
+  const repo = new RealRepository('adopt-progress');
+  const app = new GuideController(host, repo);
+  const story = parseStory(fixture());
+  await repo.saveStory('u', story);
+  const run = await app.run(snapshot, story);
+  run.states.a = 'done';
+  await app.saveRun(snapshot, run);
+  const adopted = await app.adopt(snapshot, story);
+  const restored = await app.run(snapshot, adopted);
+  assert.equal(restored.states.a, 'done');
 });

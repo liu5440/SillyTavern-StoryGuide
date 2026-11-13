@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 test.beforeEach(async ({ page }) => {
   page.on('dialog', (dialog) => void dialog.accept());
   await page.goto('/');
@@ -33,4 +34,25 @@ test('窄屏没有面板横向溢出', async ({ page }) => {
     .evaluate((e) => ({ width: e.clientWidth, scroll: e.scrollWidth }));
   expect(size.scroll).toBeLessThanOrEqual(size.width + 1);
   await page.screenshot({ path: 'test-results/guide-mobile.png', fullPage: true });
+});
+test('导出的本局备份可以导入并采用，完成状态不丢失', async ({ page }) => {
+  await page.getByRole('button', { name: '生成故事草稿' }).click();
+  await expect(page.getByRole('heading', { name: '旧城来信' })).toBeVisible();
+  await page.getByRole('button', { name: '采用此故事' }).click();
+  await expect(page.locator('.sg-story-heading .sg-badge')).toContainText('已采用');
+  await page.locator('.sg-event-row').first().click();
+  await page.getByRole('button', { name: '标记已完成' }).click();
+  const downloading = page.waitForEvent('download');
+  await page.getByRole('button', { name: '备份故事与本局进度' }).click();
+  const path = await (await downloading).path();
+  if (!path) throw new Error('下载未完成');
+  await page
+    .locator('input[type=file]')
+    .setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: await readFile(path) });
+  await page.getByLabel('同时恢复备份进度到当前聊天（需重新核对）').check();
+  await page.getByRole('button', { name: '另存为新故事' }).click();
+  await expect(page.locator('.sg-modal')).toHaveCount(0);
+  await page.getByRole('button', { name: '采用此故事' }).click();
+  await expect(page.locator('.sg-story-heading .sg-badge')).toContainText('已采用');
+  await expect(page.locator('.sg-event-row')).toContainText('已完成');
 });

@@ -33,10 +33,22 @@ export class Repository {
     });
   }
   async saveStory(user: string, story: Story): Promise<void> {
+    return this.saveVersion(user, story);
+  }
+  /** 故事与继承的本局进度在同一事务提交，失败时一起回滚。 */
+  async saveVersion(user: string, story: Story, run?: RunState): Promise<void> {
     const valid = parseStory(story);
-    await this.transact('readwrite', (store) =>
-      store.add(valid, ['story', user, valid.characterKey, valid.id, valid.revision]),
-    );
+    const progress = run ? runSchema.parse(run) : undefined;
+    if (
+      progress &&
+      (!progress.chatKey || progress.storyId !== valid.id || progress.revision !== valid.revision)
+    )
+      throw new Error('进度与故事版本不一致');
+    await this.transact('readwrite', (store) => {
+      if (progress)
+        store.put(progress, ['run', user, valid.characterKey, progress.chatKey, valid.id, valid.revision]);
+      return store.add(valid, ['story', user, valid.characterKey, valid.id, valid.revision]);
+    });
   }
   async loadStories(user: string, character: string): Promise<Story[]> {
     const range = IDBKeyRange.bound(['story', user, character], ['story', user, character, []]);

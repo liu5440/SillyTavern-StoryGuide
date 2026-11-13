@@ -32,6 +32,31 @@ export class GuideController {
     const versions = await this.repository.loadStories(snapshot.user, snapshot.characterKey);
     return Math.max(story.revision, ...versions.filter((s) => s.id === story.id).map((s) => s.revision)) + 1;
   }
+  private async inheritedRun(
+    snapshot: ContextSnapshot,
+    old: Story,
+    next: Story,
+  ): Promise<RunState | undefined> {
+    if (!snapshot.chatKey) return undefined;
+    const run = await this.repository.loadRun(
+      snapshot.user,
+      snapshot.characterKey,
+      snapshot.chatKey,
+      old.id,
+      old.revision,
+    );
+    if (!run) return undefined;
+    const ids = new Set(next.nodes.map((n) => n.id));
+    const edges = new Set(next.edges.map((e) => e.id));
+    return {
+      ...run,
+      revision: next.revision,
+      current: ids.has(run.current) ? run.current : '',
+      states: Object.fromEntries(Object.entries(run.states).filter(([id]) => ids.has(id))),
+      choices: run.choices.filter((id) => edges.has(id)),
+      needsReview: true,
+    };
+  }
   async load(books?: string[]) {
     const snapshot = await this.host.snapshot(books);
     const stories = await this.repository.loadStories(snapshot.user, snapshot.characterKey);
@@ -54,7 +79,9 @@ export class GuideController {
       status: 'draft',
     });
     this.guardStory(snapshot, story);
-    await this.repository.saveStory(snapshot.user, saved);
+    const run = await this.inheritedRun(snapshot, story, saved);
+    this.guardStory(snapshot, story);
+    await this.repository.saveVersion(snapshot.user, saved, run);
     this.guard(snapshot);
     return saved;
   }
@@ -69,7 +96,9 @@ export class GuideController {
       createdAt: new Date().toISOString(),
     });
     this.guardStory(snapshot, story);
-    await this.repository.saveStory(snapshot.user, adopted);
+    const run = await this.inheritedRun(snapshot, story, adopted);
+    this.guardStory(snapshot, story);
+    await this.repository.saveVersion(snapshot.user, adopted, run);
     this.guard(snapshot);
     return adopted;
   }

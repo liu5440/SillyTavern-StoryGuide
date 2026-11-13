@@ -4415,11 +4415,19 @@ var Repository = class {
     });
   }
   async saveStory(user, story) {
+    return this.saveVersion(user, story);
+  }
+  /** 故事与继承的本局进度在同一事务提交，失败时一起回滚。 */
+  async saveVersion(user, story, run) {
     const valid = parseStory(story);
-    await this.transact(
-      "readwrite",
-      (store) => store.add(valid, ["story", user, valid.characterKey, valid.id, valid.revision])
-    );
+    const progress = run ? runSchema.parse(run) : void 0;
+    if (progress && (!progress.chatKey || progress.storyId !== valid.id || progress.revision !== valid.revision))
+      throw new Error("\u8FDB\u5EA6\u4E0E\u6545\u4E8B\u7248\u672C\u4E0D\u4E00\u81F4");
+    await this.transact("readwrite", (store) => {
+      if (progress)
+        store.put(progress, ["run", user, valid.characterKey, progress.chatKey, valid.id, valid.revision]);
+      return store.add(valid, ["story", user, valid.characterKey, valid.id, valid.revision]);
+    });
   }
   async loadStories(user, character) {
     const range = IDBKeyRange.bound(["story", user, character], ["story", user, character, []]);
@@ -4613,6 +4621,27 @@ var GuideController = class {
     const versions = await this.repository.loadStories(snapshot.user, snapshot.characterKey);
     return Math.max(story.revision, ...versions.filter((s) => s.id === story.id).map((s) => s.revision)) + 1;
   }
+  async inheritedRun(snapshot, old, next) {
+    if (!snapshot.chatKey) return void 0;
+    const run = await this.repository.loadRun(
+      snapshot.user,
+      snapshot.characterKey,
+      snapshot.chatKey,
+      old.id,
+      old.revision
+    );
+    if (!run) return void 0;
+    const ids = new Set(next.nodes.map((n) => n.id));
+    const edges = new Set(next.edges.map((e) => e.id));
+    return {
+      ...run,
+      revision: next.revision,
+      current: ids.has(run.current) ? run.current : "",
+      states: Object.fromEntries(Object.entries(run.states).filter(([id2]) => ids.has(id2))),
+      choices: run.choices.filter((id2) => edges.has(id2)),
+      needsReview: true
+    };
+  }
   async load(books) {
     const snapshot = await this.host.snapshot(books);
     const stories = await this.repository.loadStories(snapshot.user, snapshot.characterKey);
@@ -4635,7 +4664,9 @@ var GuideController = class {
       status: "draft"
     });
     this.guardStory(snapshot, story);
-    await this.repository.saveStory(snapshot.user, saved);
+    const run = await this.inheritedRun(snapshot, story, saved);
+    this.guardStory(snapshot, story);
+    await this.repository.saveVersion(snapshot.user, saved, run);
     this.guard(snapshot);
     return saved;
   }
@@ -4650,7 +4681,9 @@ var GuideController = class {
       createdAt: (/* @__PURE__ */ new Date()).toISOString()
     });
     this.guardStory(snapshot, story);
-    await this.repository.saveStory(snapshot.user, adopted);
+    const run = await this.inheritedRun(snapshot, story, adopted);
+    this.guardStory(snapshot, story);
+    await this.repository.saveVersion(snapshot.user, adopted, run);
     this.guard(snapshot);
     return adopted;
   }
@@ -5000,6 +5033,7 @@ var GuidePanel = class {
   tab = "\u6982\u89C8";
   query = "";
   busy = false;
+  saving = false;
   abort;
   selectedSources = /* @__PURE__ */ new Set();
   loadId = 0;
@@ -5013,9 +5047,11 @@ var GuidePanel = class {
   closeEditors() {
     document.querySelectorAll(".sg-modal").forEach((dialog) => dialog.close());
   }
-  guardView(snapshot) {
+  guardView(snapshot, expectedStory) {
     this.app.guard(snapshot);
     if (snapshot !== this.snapshot || !this.dialog.open) throw new Error("\u9875\u9762\u5DF2\u91CD\u65B0\u8BFB\u53D6\uFF0C\u5DF2\u4E22\u5F03\u65E7\u64CD\u4F5C\u7ED3\u679C");
+    if (expectedStory && expectedStory !== this.story)
+      throw new Error("\u6545\u4E8B\u5DF2\u88AB\u7F16\u8F91\u6216\u5207\u6362\uFF0C\u5F53\u524D\u4FEE\u6539\u5DF2\u4FDD\u7559\uFF1B\u65E7\u64CD\u4F5C\u7ED3\u679C\u53EF\u4ECE\u5B58\u6863\u5217\u8868\u67E5\u770B");
   }
   open() {
     if (this.dialog.open) return;
@@ -5034,21 +5070,45 @@ var GuidePanel = class {
       this.message(error instanceof Error ? error.message : "\u64CD\u4F5C\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5", true);
     }
   }
+  async persist(snapshot, story, adopt) {
+    if (this.saving) throw new Error("\u6B63\u5728\u4FDD\u5B58\uFF0C\u8BF7\u7B49\u5F85\u5B8C\u6210");
+    this.saving = true;
+    this.message("\u6B63\u5728\u4FDD\u5B58\u7248\u672C\u4E0E\u672C\u5C40\u8FDB\u5EA6\u2026");
+    try {
+      const saved = adopt ? await this.app.adopt(snapshot, story) : await this.app.save(snapshot, story);
+      const stories = await this.app.repository.loadStories(snapshot.user, snapshot.characterKey);
+      const run = await this.app.run(snapshot, saved);
+      this.guardView(snapshot, story);
+      this.story = saved;
+      this.dirty = false;
+      this.stories = stories;
+      this.run = run;
+      this.renderContent();
+      this.message(
+        adopt ? "\u6545\u4E8B\u5DF2\u91C7\u7528\uFF0C\u53EF\u4EE5\u624B\u52A8\u8BB0\u5F55\u672C\u5C40\u8FDB\u5EA6\uFF1B\u6CA1\u6709\u81EA\u52A8\u6CE8\u5165\u804A\u5929\u3002" : "\u8349\u7A3F\u7248\u672C\u5DF2\u4FDD\u5B58\u5230\u5F53\u524D\u6D4F\u89C8\u5668"
+      );
+    } finally {
+      this.saving = false;
+    }
+  }
   async load(books) {
     const sequence = ++this.loadId;
     const { snapshot, stories } = await this.app.load(books);
     if (sequence !== this.loadId || !this.dialog.open) return;
+    const story = stories[0];
+    const run = story ? await this.app.run(snapshot, story) : void 0;
+    if (sequence !== this.loadId || !this.dialog.open) return;
     this.snapshot = snapshot;
     this.stories = stories;
-    this.story = stories[0];
+    this.story = story;
     this.selectedSources = new Set(snapshot.sources.filter((s) => !s.disabled).map((s) => s.id));
     this.dirty = false;
     this.undo = [];
     this.spoilers = false;
-    this.run = this.story ? await this.app.run(snapshot, this.story) : void 0;
-    if (sequence !== this.loadId) return;
+    this.run = run;
     this.title.textContent = `${snapshot.characterName}\u7684\u5267\u60C5\u6307\u5357`;
     await this.renderSidebar();
+    if (sequence !== this.loadId || !this.dialog.open) return;
     this.renderContent();
     this.message(
       `${snapshot.sources.length} \u6761\u8D44\u6599\u5DF2\u8BFB\u53D6 \xB7 \u4F7F\u7528\u9152\u9986\u5F53\u524D ${snapshot.api} \u8FDE\u63A5\u751F\u6210 \xB7 \u5B58\u6863\u4EC5\u5728\u5F53\u524D\u6D4F\u89C8\u5668`
@@ -5125,6 +5185,7 @@ var GuidePanel = class {
         ))
           return;
         this.busy = true;
+        const previousStory = this.story;
         generate.disabled = true;
         this.abort = new AbortController();
         const timeout = setTimeout(() => this.abort?.abort(), 18e4);
@@ -5141,6 +5202,8 @@ var GuidePanel = class {
           this.guardView(snapshot);
           const run = await this.app.run(snapshot, story);
           this.guardView(snapshot);
+          if (this.story !== previousStory)
+            throw new Error("\u751F\u6210\u671F\u95F4\u6545\u4E8B\u5DF2\u88AB\u7F16\u8F91\u6216\u5207\u6362\uFF0C\u5F53\u524D\u4FEE\u6539\u5DF2\u4FDD\u7559\uFF0C\u8BF7\u91CD\u65B0\u751F\u6210");
           this.story = story;
           this.run = run;
           this.dirty = true;
@@ -5265,8 +5328,10 @@ var GuidePanel = class {
           }
           const story2 = this.stories[Number(select.value)];
           if (!story2) return;
+          const previousStory = this.story;
           const run = await this.app.run(snapshot, story2);
           this.guardView(snapshot);
+          if (this.story !== previousStory) throw new Error("\u6545\u4E8B\u5DF2\u88AB\u7F16\u8F91\u6216\u5207\u6362\uFF0C\u5DF2\u4FDD\u7559\u5F53\u524D\u7248\u672C");
           this.story = story2;
           this.run = run;
           this.dirty = false;
@@ -5311,37 +5376,8 @@ var GuidePanel = class {
     this.content.append(heading);
     const saveActions = el("div", "sg-toolbar");
     saveActions.append(
-      button(
-        "\u4FDD\u5B58\u8349\u7A3F\u7248\u672C",
-        () => this.safe(async () => {
-          const saved = await this.app.save(snapshot, story);
-          const stories = await this.app.repository.loadStories(snapshot.user, snapshot.characterKey);
-          const run = await this.app.run(snapshot, saved);
-          this.guardView(snapshot);
-          this.story = saved;
-          this.dirty = false;
-          this.stories = stories;
-          this.run = run;
-          this.renderContent();
-          this.message("\u8349\u7A3F\u7248\u672C\u5DF2\u4FDD\u5B58\u5230\u5F53\u524D\u6D4F\u89C8\u5668");
-        })
-      ),
-      button(
-        "\u91C7\u7528\u6B64\u6545\u4E8B",
-        () => this.safe(async () => {
-          const adopted = await this.app.adopt(snapshot, story);
-          const stories = await this.app.repository.loadStories(snapshot.user, snapshot.characterKey);
-          const run = await this.app.run(snapshot, adopted);
-          this.guardView(snapshot);
-          this.story = adopted;
-          this.dirty = false;
-          this.stories = stories;
-          this.run = run;
-          this.renderContent();
-          this.message("\u6545\u4E8B\u5DF2\u91C7\u7528\uFF0C\u53EF\u4EE5\u624B\u52A8\u8BB0\u5F55\u672C\u5C40\u8FDB\u5EA6\uFF1B\u6CA1\u6709\u81EA\u52A8\u6CE8\u5165\u804A\u5929\u3002");
-        }),
-        "sg-primary"
-      ),
+      button("\u4FDD\u5B58\u8349\u7A3F\u7248\u672C", () => this.safe(() => this.persist(snapshot, story, false))),
+      button("\u91C7\u7528\u6B64\u6545\u4E8B", () => this.safe(() => this.persist(snapshot, story, true)), "sg-primary"),
       button("\u5BFC\u51FA\u6545\u4E8B", () => download(`\u5267\u60C5\u6307\u5357-${story.id}-v${story.revision}.json`, story))
     );
     saveActions.append(
@@ -5446,7 +5482,7 @@ var GuidePanel = class {
           (id2) => this.edgeDetail(id2),
           this.spoilers ? (id2, x, y) => {
             if (this.story) {
-              this.story.positions[id2] = { x, y };
+              this.story = { ...this.story, positions: { ...this.story.positions, [id2]: { x, y } } };
               this.dirty = true;
               this.message("\u5E03\u5C40\u5DF2\u8C03\u6574\uFF0C\u70B9\u51FB\u4FDD\u5B58\u8349\u7A3F\u7248\u672C\u53EF\u6301\u4E45\u4FDD\u5B58");
             }
@@ -5610,7 +5646,7 @@ var GuidePanel = class {
                 try {
                   this.message("\u6B63\u5728\u91CD\u65B0\u6574\u7406\u6B64\u8282\u70B9\u2026");
                   const next = await this.app.regenerate(snapshot, story, original.id, this.abort.signal);
-                  this.guardView(snapshot);
+                  this.guardView(snapshot, story);
                   showModal("\u8282\u70B9\u4FEE\u6539\u9884\u89C8", (preview, done) => {
                     preview.append(
                       el("h3", "", "\u4FEE\u6539\u524D"),
@@ -5627,7 +5663,7 @@ ${next.summary}
                       button(
                         "\u66FF\u6362\u5230\u8349\u7A3F",
                         () => this.safe(() => {
-                          this.guardView(snapshot);
+                          this.guardView(snapshot, story);
                           this.story = {
                             ...story,
                             nodes: story.nodes.map((n) => n.id === original.id ? next : n)

@@ -35,6 +35,7 @@ export class GuidePanel {
   private tab = '概览';
   private query = '';
   private busy = false;
+  private saving = false;
   private abort?: AbortController;
   private selectedSources = new Set<string>();
   private loadId = 0;
@@ -95,9 +96,11 @@ export class GuidePanel {
   private closeEditors() {
     document.querySelectorAll<HTMLDialogElement>('.sg-modal').forEach((dialog) => dialog.close());
   }
-  private guardView(snapshot: ContextSnapshot) {
+  private guardView(snapshot: ContextSnapshot, expectedStory?: Story) {
     this.app.guard(snapshot);
     if (snapshot !== this.snapshot || !this.dialog.open) throw new Error('页面已重新读取，已丢弃旧操作结果');
+    if (expectedStory && expectedStory !== this.story)
+      throw new Error('故事已被编辑或切换，当前修改已保留；旧操作结果可从存档列表查看');
   }
   open() {
     if (this.dialog.open) return;
@@ -116,21 +119,45 @@ export class GuidePanel {
       this.message(error instanceof Error ? error.message : '操作失败，请重试', true);
     }
   }
+  private async persist(snapshot: ContextSnapshot, story: Story, adopt: boolean) {
+    if (this.saving) throw new Error('正在保存，请等待完成');
+    this.saving = true;
+    this.message('正在保存版本与本局进度…');
+    try {
+      const saved = adopt ? await this.app.adopt(snapshot, story) : await this.app.save(snapshot, story);
+      const stories = await this.app.repository.loadStories(snapshot.user, snapshot.characterKey);
+      const run = await this.app.run(snapshot, saved);
+      this.guardView(snapshot, story);
+      this.story = saved;
+      this.dirty = false;
+      this.stories = stories;
+      this.run = run;
+      this.renderContent();
+      this.message(
+        adopt ? '故事已采用，可以手动记录本局进度；没有自动注入聊天。' : '草稿版本已保存到当前浏览器',
+      );
+    } finally {
+      this.saving = false;
+    }
+  }
   private async load(books?: string[]) {
     const sequence = ++this.loadId;
     const { snapshot, stories } = await this.app.load(books);
     if (sequence !== this.loadId || !this.dialog.open) return;
+    const story = stories[0];
+    const run = story ? await this.app.run(snapshot, story) : undefined;
+    if (sequence !== this.loadId || !this.dialog.open) return;
     this.snapshot = snapshot;
     this.stories = stories;
-    this.story = stories[0];
+    this.story = story;
     this.selectedSources = new Set(snapshot.sources.filter((s) => !s.disabled).map((s) => s.id));
     this.dirty = false;
     this.undo = [];
     this.spoilers = false;
-    this.run = this.story ? await this.app.run(snapshot, this.story) : undefined;
-    if (sequence !== this.loadId) return;
+    this.run = run;
     this.title.textContent = `${snapshot.characterName}的剧情指南`;
     await this.renderSidebar();
+    if (sequence !== this.loadId || !this.dialog.open) return;
     this.renderContent();
     this.message(
       `${snapshot.sources.length} 条资料已读取 · 使用酒馆当前 ${snapshot.api} 连接生成 · 存档仅在当前浏览器`,
@@ -212,6 +239,7 @@ export class GuidePanel {
           )
             return;
           this.busy = true;
+          const previousStory = this.story;
           generate.disabled = true;
           this.abort = new AbortController();
           const timeout = setTimeout(() => this.abort?.abort(), 180000);
@@ -228,6 +256,8 @@ export class GuidePanel {
             this.guardView(snapshot);
             const run = await this.app.run(snapshot, story);
             this.guardView(snapshot);
+            if (this.story !== previousStory)
+              throw new Error('生成期间故事已被编辑或切换，当前修改已保留，请重新生成');
             this.story = story;
             this.run = run;
             this.dirty = true;
@@ -362,8 +392,10 @@ export class GuidePanel {
             }
             const story = this.stories[Number(select.value)];
             if (!story) return;
+            const previousStory = this.story;
             const run = await this.app.run(snapshot, story);
             this.guardView(snapshot);
+            if (this.story !== previousStory) throw new Error('故事已被编辑或切换，已保留当前版本');
             this.story = story;
             this.run = run;
             this.dirty = false;
@@ -408,37 +440,8 @@ export class GuidePanel {
     this.content.append(heading);
     const saveActions = el('div', 'sg-toolbar');
     saveActions.append(
-      button('保存草稿版本', () =>
-        this.safe(async () => {
-          const saved = await this.app.save(snapshot, story);
-          const stories = await this.app.repository.loadStories(snapshot.user, snapshot.characterKey);
-          const run = await this.app.run(snapshot, saved);
-          this.guardView(snapshot);
-          this.story = saved;
-          this.dirty = false;
-          this.stories = stories;
-          this.run = run;
-          this.renderContent();
-          this.message('草稿版本已保存到当前浏览器');
-        }),
-      ),
-      button(
-        '采用此故事',
-        () =>
-          this.safe(async () => {
-            const adopted = await this.app.adopt(snapshot, story);
-            const stories = await this.app.repository.loadStories(snapshot.user, snapshot.characterKey);
-            const run = await this.app.run(snapshot, adopted);
-            this.guardView(snapshot);
-            this.story = adopted;
-            this.dirty = false;
-            this.stories = stories;
-            this.run = run;
-            this.renderContent();
-            this.message('故事已采用，可以手动记录本局进度；没有自动注入聊天。');
-          }),
-        'sg-primary',
-      ),
+      button('保存草稿版本', () => this.safe(() => this.persist(snapshot, story, false))),
+      button('采用此故事', () => this.safe(() => this.persist(snapshot, story, true)), 'sg-primary'),
       button('导出故事', () => download(`剧情指南-${story.id}-v${story.revision}.json`, story)),
     );
     saveActions.append(
@@ -545,7 +548,7 @@ export class GuidePanel {
           this.spoilers
             ? (id, x, y) => {
                 if (this.story) {
-                  this.story.positions[id] = { x, y };
+                  this.story = { ...this.story, positions: { ...this.story.positions, [id]: { x, y } } };
                   this.dirty = true;
                   this.message('布局已调整，点击保存草稿版本可持久保存');
                 }
@@ -713,7 +716,7 @@ export class GuidePanel {
                 try {
                   this.message('正在重新整理此节点…');
                   const next = await this.app.regenerate(snapshot, story, original.id, this.abort.signal);
-                  this.guardView(snapshot);
+                  this.guardView(snapshot, story);
                   showModal('节点修改预览', (preview, done) => {
                     preview.append(
                       el('h3', '', '修改前'),
@@ -728,7 +731,7 @@ export class GuidePanel {
                         '替换到草稿',
                         () =>
                           this.safe(() => {
-                            this.guardView(snapshot);
+                            this.guardView(snapshot, story);
                             this.story = {
                               ...story,
                               nodes: story.nodes.map((n) => (n.id === original.id ? next : n)),
