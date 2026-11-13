@@ -4499,7 +4499,7 @@ function diagnosticReport() {
   return {
     format: "story-guide-diagnostics",
     schemaVersion: 1,
-    version: "0.5.0",
+    version: "0.5.1",
     modelSource: "SillyTavern.getContext().generateRaw / \u9152\u9986\u53C2\u6570\u6784\u9020\u4E0ESSE\u89E3\u6790",
     retention: "\u5F53\u524D\u9875\u9762\u5185\u5B58\u6700\u8FD1100\u6761\uFF0C\u5237\u65B0\u6E05\u7A7A",
     entries: entries.map((entry) => ({ ...entry, fields: entry.fields?.slice() }))
@@ -6795,7 +6795,8 @@ ${source.text.slice(0, 19e3)}` : source.text,
       chapter: "",
       provenance: "explicit",
       refs: [{ sourceId: source.id, quote: source.text.slice(0, 2e3) }],
-      spoiler: true,
+      // 玩家主动建立的原文目录不是尚未触发的未来剧情，默认可见。
+      spoiler: false,
       locked: false
     }))
   });
@@ -7122,7 +7123,9 @@ var GuidePanel = class {
         this.story = story;
         this.run = run;
         this.dirty = true;
-        this.message("\u5DF2\u5EFA\u7ACB\u672C\u5730\u8D44\u6599\u76EE\u5F55\uFF0C\u672A\u8C03\u7528AI\uFF1B\u5C1A\u672A\u63A8\u65AD\u8DEF\u7EBF\u6216\u4E8B\u4EF6\u5173\u7CFB\u3002\u5F00\u542F\u5B8C\u6574\u653B\u7565\u53EF\u67E5\u770B\u539F\u6587\u5361\u7247\u3002");
+        this.tab = "\u4E8B\u4EF6";
+        this.query = "";
+        this.message(`\u5DF2\u5EFA\u7ACB${story.nodes.length}\u6761\u672C\u5730\u8D44\u6599\u76EE\u5F55\uFF0C\u672A\u8C03\u7528AI\uFF1B\u539F\u6587\u6761\u76EE\u5DF2\u663E\u793A\uFF0C\u5C1A\u672A\u63A8\u65AD\u8DEF\u7EBF\u6216\u4E8B\u4EF6\u5173\u7CFB\u3002`);
         this.renderContent();
       })
     );

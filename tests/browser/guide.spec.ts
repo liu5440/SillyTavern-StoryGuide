@@ -17,8 +17,13 @@ test('本地资料目录不调用模型，也能查看原文卡片', async ({ pa
   });
   await page.getByRole('button', { name: '建立本地资料目录（无需AI）' }).click();
   await expect(page.locator('.sg-status')).toContainText('未调用AI');
-  await page.getByLabel('完整攻略（含剧透）').check();
-  await page.getByRole('button', { name: '事件', exact: true }).click();
+  await expect(page.getByLabel('完整攻略（含剧透）')).not.toBeChecked();
+  await expect(page.locator('.sg-output')).toContainText('一位住在旧城的调查员。');
+  await page.getByRole('button', { name: '保存草稿版本', exact: true }).click();
+  await expect(page.locator('.sg-status')).toContainText('已保存');
+  await page.reload();
+  await openGuide(page);
+  await expect(page.getByLabel('完整攻略（含剧透）')).not.toBeChecked();
   await expect(page.locator('.sg-output')).toContainText('一位住在旧城的调查员。');
 });
 

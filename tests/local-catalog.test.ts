@@ -19,6 +19,7 @@ test('本地目录保留原文及准确引用，不编造路线或地点', () =>
   assert.equal(story.nodes[0]?.summary, source.text);
   assert.equal(story.nodes[0]?.refs[0]?.sourceId, source.id);
   assert.equal(story.nodes[0]?.location, '');
+  assert.equal(story.nodes[0]?.spoiler, false);
   assert.deepEqual(story.edges, []);
   assert.equal(story.status, 'draft');
 });

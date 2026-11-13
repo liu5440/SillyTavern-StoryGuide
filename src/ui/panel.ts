@@ -342,7 +342,9 @@ export class GuidePanel {
         this.story = story;
         this.run = run;
         this.dirty = true;
-        this.message('已建立本地资料目录，未调用AI；尚未推断路线或事件关系。开启完整攻略可查看原文卡片。');
+        this.tab = '事件';
+        this.query = '';
+        this.message(`已建立${story.nodes.length}条本地资料目录，未调用AI；原文条目已显示，尚未推断路线或事件关系。`);
         this.renderContent();
       }),
     );
