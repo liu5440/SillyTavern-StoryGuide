@@ -7,6 +7,81 @@ test.beforeEach(async ({ page }) => {
   await openGuide(page);
 });
 
+test('本地资料目录不调用模型，也能查看原文卡片', async ({ page }) => {
+  await page.evaluate(() => {
+    const c = window.SillyTavern?.getContext();
+    if (c)
+      c.generateRaw = async () => {
+        throw new Error('不应调用模型');
+      };
+  });
+  await page.getByRole('button', { name: '建立本地资料目录（无需AI）' }).click();
+  await expect(page.locator('.sg-status')).toContainText('未调用AI');
+  await page.getByLabel('完整攻略（含剧透）').check();
+  await page.getByRole('button', { name: '事件', exact: true }).click();
+  await expect(page.locator('.sg-output')).toContainText('一位住在旧城的调查员。');
+});
+
+test('兼容调用消费当前酒馆流式接口，不触发generateRaw', async ({ page }) => {
+  await page.route('**/scripts/openai.js', (route) =>
+    route.fulfill({
+      contentType: 'text/javascript',
+      body: `
+    export const oai_settings = {stream_openai:true, n:3, logprobs:5, chat_completion_source:'custom'};
+    export function getChatCompletionModel(){ return 'test'; }
+    export async function createGenerationParameters(settings, model, type, messages) {
+      if (settings.n !== 1 || settings.logprobs !== 0 || oai_settings.n !== 3) throw new Error('请求隔离失败');
+      return {stream:true, generate_data:{stream:true, n:settings.n, messages, tools:[{type:"function"}], tool_choice:"required"}};
+    }
+    export function getStreamingReply(data){ return data.text; }
+    `,
+    }),
+  );
+  await page.route('**/script.js', (route) =>
+    route.fulfill({
+      contentType: 'text/javascript',
+      body: `
+    export function getRequestHeaders(){return {'Content-Type':'application/json'};}
+    export const eventSource={emit:async()=>{}};
+    export const event_types={CHAT_COMPLETION_SETTINGS_READY:'settings'};
+  `,
+    }),
+  );
+  await page.route('**/scripts/sse-stream.js', (route) =>
+    route.fulfill({
+      contentType: 'text/javascript',
+      body: `
+    export function getEventSourceStream(){return new TransformStream({transform(chunk,controller){controller.enqueue({data:new TextDecoder().decode(chunk)});}});}
+  `,
+    }),
+  );
+  await page.route('**/api/backends/chat-completions/generate', async (route) => {
+    const body = route.request().postDataJSON();
+    expect(body.n).toBe(1);
+    expect(body.logprobs).toBe(false);
+    expect(body.tools).toBeUndefined();
+    expect(body.tool_choice).toBeUndefined();
+    expect(body.messages).toHaveLength(2);
+    const draft = await page.evaluate(() => (window as unknown as { testDraft: unknown }).testDraft);
+    await route.fulfill({
+      body: JSON.stringify({ text: JSON.stringify(draft) }),
+      contentType: 'text/event-stream',
+    });
+  });
+  await page.evaluate(() => {
+    const c = window.SillyTavern?.getContext();
+    if (c) {
+      c.mainApi = 'openai';
+      c.generateRaw = async () => {
+        throw new Error('不应使用quiet');
+      };
+    }
+  });
+  await page.getByRole('combobox', { name: '模型调用方式' }).selectOption('compatible');
+  await page.getByRole('button', { name: '生成故事草稿' }).click();
+  await expect(page.getByRole('heading', { name: '旧城来信' })).toBeVisible();
+});
+
 test('宿主同步报错后可重试，修复等待显示原因并可取消', async ({ page }) => {
   await page.evaluate(() => {
     if (!window.SillyTavern) throw new Error('Missing test host');

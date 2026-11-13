@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { fingerprint, type Source } from '../domain/story';
 import { selectChatMessages } from '../domain/chat-materials';
 import { diagnosticId, recordDiagnostic, classifyFailure } from '../diagnostics';
+import { loadCompletionSender, sendCompatibleCompletion } from './chat-completion';
 
 type EventSource = {
   on: (name: string, callback: () => void) => void;
@@ -86,6 +87,14 @@ export interface Host {
 }
 export class TavernHost implements Host {
   private generating = false;
+  private transport: 'raw' | 'compatible' = 'raw';
+  setTransport(value: 'raw' | 'compatible') {
+    if (this.generating) throw new Error('请先结束当前模型请求再切换调用方式');
+    this.transport = value;
+  }
+  getTransport() {
+    return this.transport;
+  }
   private get context() {
     const c = window.SillyTavern?.getContext();
     if (!c) throw new Error('未检测到酒馆接口，请在 SillyTavern 中打开扩展');
@@ -215,6 +224,7 @@ export class TavernHost implements Host {
       requestId,
       event: 'request',
       inputChars: prompt.length,
+      transport: this.transport,
       api:
         api && ['openai', 'kobold', 'koboldhorde', 'textgenerationwebui', 'novel'].includes(api)
           ? api
@@ -236,17 +246,32 @@ export class TavernHost implements Host {
         elapsedMs: Date.now() - started,
         reason: classifyFailure(error),
       });
+      if (error instanceof Error && error.message === 'No message generated') {
+        throw new Error(
+          '酒馆未取得可用正文（No message generated）。可在顶部切换“兼容调用”，配合酒馆流式开关对照测试；不会自动重试。',
+        );
+      }
       throw error;
     }
   }
   private async generateInternal(prompt: string, signal: AbortSignal): Promise<string> {
     if (signal.aborted) throw new Error('已取消生成');
     const c = this.context;
-    if (!c.generateRaw) throw new Error('当前酒馆不支持 generateRaw，请升级');
+    if (!c.generateRaw && this.transport === 'raw') throw new Error('当前酒馆不支持 generateRaw，请升级');
     if (c.onlineStatus === 'no_connection') throw new Error('请先在酒馆中连接模型 API');
     if (this.generating) throw new Error('上一次模型请求仍在结束，请稍后再试');
+    if (this.transport === 'compatible') {
+      if (c.mainApi !== 'openai') throw new Error('兼容调用适用于聊天补全连接，请切换为原生后台调用');
+      this.generating = true;
+      try {
+        return await sendCompatibleCompletion(await loadCompletionSender(), prompt, signal);
+      } finally {
+        this.generating = false;
+      }
+    }
     // 宿主没有局部中止参数，不调用全局 stopGeneration；等待返回后丢弃结果。
     const generate = c.generateRaw;
+    if (!generate) throw new Error('当前酒馆不支持 generateRaw，请升级');
     this.generating = true;
     const pending = Promise.resolve().then(() =>
       generate.call(c, {

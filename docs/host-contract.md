@@ -57,3 +57,11 @@ TavernHost.chatLength/readChat集中执行身份检查与范围读取。预览�
 ## 0.4.4 消息来源契约
 
 复用已验证的聊天is_user/is_system字段；排除系统及空消息后，is_user=false映射为character，即AI回复。UI默认仅选择该类消息，可显式选择全部对话；不修改宿主聊天。只把筛选勾选后的原始编号传给既有应用用例，保持来源校验、发送和导出一致。
+
+## 0.5.0：流式兼容与本地目录（FR-02 / FR-03 / FR-10）
+
+已核实1.19.0：generateRaw使用quiet，强制关闭stream。兼容路径动态导入原生scripts/openai.js、scripts/sse-stream.js和script.js；复用createGenerationParameters、getChatCompletionModel、getStreamingReply、getEventSourceStream及getRequestHeaders。对当前设置建立副本（n=1、logprobs=0），以normal构造参数并派发CHAT_COMPLETION_SETTINGS_READY，随后强制n=1、关闭logprobs；若插件改为非流式则报错，不静默降级。请求仍只到酒馆本机/api/backends/chat-completions/generate，密钥由酒馆后台处理。累计正文不执行工具调用、不调用Generate或普通sendOpenAIRequest的概率保存分支、不写聊天。
+
+兼容方式要求流式开启且模型支持，保留原后台方式。沿用用户回复长度，不改全局设置、不自动重试。宿主及插件仍可处理设置事件，不承诺第三方所有插件兼容。实际验证脚本为scripts/smoke-completion-transport.mjs，使用独立酒馆与Mock响应，不调用真实模型。
+
+本地目录每个所选资料对应一个有原文引用的目录节点，关系为空；不推断前置条件、地点或路线，不声称自动理解。超长条目展示明确标记的摘录并保留完整来源，超过500条明确报错。

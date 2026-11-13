@@ -4,6 +4,7 @@ export interface Diagnostic {
   requestId: string;
   event: 'request' | 'response' | 'failure' | 'cancel' | 'validation';
   api?: string;
+  transport?: 'raw' | 'compatible';
   elapsedMs?: number;
   inputChars?: number;
   outputChars?: number;
@@ -29,8 +30,8 @@ export function diagnosticReport() {
   return {
     format: 'story-guide-diagnostics',
     schemaVersion: 1,
-    version: '0.4.4',
-    modelSource: 'SillyTavern.getContext().generateRaw',
+    version: '0.5.0',
+    modelSource: 'SillyTavern.getContext().generateRaw / 酒馆参数构造与SSE解析',
     retention: '当前页面内存最近100条，刷新清空',
     entries: entries.map((entry) => ({ ...entry, fields: entry.fields?.slice() })),
   };
@@ -50,5 +51,7 @@ export function classifyFailure(error: unknown): string {
   if (/请先在酒馆中连接模型/.test(message)) return '酒馆模型尚未连接';
   if (/不支持 generateRaw/.test(message)) return '宿主缺少generateRaw能力';
   if (/network|fetch|网络/i.test(message)) return '网络请求失败';
+  if (/No message generated|未返回可用正文/.test(message))
+    return '酒馆未取得可用正文（需检查响应及传输兼容性）';
   return '宿主模型调用失败（未保存异常原文）';
 }

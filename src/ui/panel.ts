@@ -15,6 +15,7 @@ import { graph } from './graph';
 import { MaterialsController } from '../application/materials';
 import { openMaterials } from './materials';
 import { openDiagnostics } from './diagnostics';
+import { buildLocalCatalog } from '../application/local-catalog';
 
 const provenance = { explicit: '原文明确', inferred: '模型推断', original: '原创故事', user: '用户设定' };
 const kinds = { start: '开场', event: '事件', choice: '选择', ending: '结局' };
@@ -62,6 +63,28 @@ export class GuidePanel {
         if (!this.dirty || confirm('草稿尚未保存，关闭后更改不会保留。继续？')) this.dialog.close();
       }),
     );
+    const transport = el('select');
+    transport.setAttribute('aria-label', '模型调用方式');
+    for (const [value, label] of [
+      ['raw', '后台非流式（原方式）'],
+      ['compatible', '兼容调用（跟随酒馆流式设置）'],
+    ] as const) {
+      const option = el('option', '', label);
+      option.value = value;
+      transport.append(option);
+    }
+    transport.value = this.app.host.getTransport();
+    transport.addEventListener('change', () => {
+      void this.safe(() => {
+        try {
+          this.app.host.setTransport(transport.value === 'compatible' ? 'compatible' : 'raw');
+        } finally {
+          transport.value = this.app.host.getTransport();
+        }
+        this.message('调用方式已切换；聊天素材整理也使用此设置。兼容方式沿用酒馆当前回复长度，不自动重试。');
+      });
+    });
+    header.append(transport);
     this.status.setAttribute('role', 'status');
     this.status.setAttribute('aria-live', 'polite');
     this.body.append(this.sidebar, this.content);
@@ -303,7 +326,27 @@ export class GuidePanel {
       this.abort?.abort();
       this.message('已请求取消。酒馆模型请求可能继续执行和计费，返回内容不会采用。');
     });
-    this.sidebar.append(mode, brief.root, books, sourceList, generate, cancel);
+    const localCatalog = button('建立本地资料目录（无需AI）', () =>
+      this.safe(async () => {
+        if (this.busy || this.saving) throw new Error('请先结束当前操作');
+        if (this.dirty && !confirm('本地目录将替换当前未保存草稿，继续？')) return;
+        this.guardView(snapshot);
+        const story = buildLocalCatalog({
+          ...snapshot,
+          sources: snapshot.sources.filter((source) => this.selectedSources.has(source.id)),
+        });
+        const previous = this.story;
+        const run = await this.app.run(snapshot, story);
+        this.guardView(snapshot);
+        if (this.busy || this.story !== previous) throw new Error('当前故事已变化，请重新建立目录');
+        this.story = story;
+        this.run = run;
+        this.dirty = true;
+        this.message('已建立本地资料目录，未调用AI；尚未推断路线或事件关系。开启完整攻略可查看原文卡片。');
+        this.renderContent();
+      }),
+    );
+    this.sidebar.append(mode, brief.root, books, sourceList, localCatalog, generate, cancel);
     const footer = el('div', 'sg-sidebar-footer');
     const upload = el('input');
     upload.type = 'file';
