@@ -49,12 +49,26 @@ export class GuidePanel {
   private loadId = 0;
   private returnFocus?: HTMLElement;
   private unsubscribe: () => void;
+  private bubble = button('剧情手册', () => this.restore(), 'sg-guide-bubble');
   constructor(private app: GuideController) {
     const header = el('header', 'sg-header');
     const heading = el('div');
     heading.append(el('span', 'sg-brand', 'STORY GUIDE / 剧情手册'), this.title);
     header.append(
       heading,
+      button('资料设置', () => {
+        this.dialog.classList.toggle('sg-show-settings');
+      }),
+      button('放大', () => {
+        const large = this.dialog.classList.toggle('sg-expanded');
+        const toggle = header.querySelector<HTMLButtonElement>('[data-layout-toggle]');
+        if (toggle) toggle.textContent = large ? '悬浮阅读' : '放大';
+      }),
+      button('收起', () => {
+        this.dialog.classList.add('sg-minimized');
+        this.bubble.hidden = false;
+        this.bubble.focus();
+      }),
       button('排查日志', openDiagnostics),
       button('场景素材库', () =>
         this.safe(() => {
@@ -67,6 +81,10 @@ export class GuidePanel {
         if (!this.dirty || confirm('草稿尚未保存，关闭后更改不会保留。继续？')) this.dialog.close();
       }),
     );
+    const layoutToggle = [...header.querySelectorAll('button')].find(
+      (button) => button.textContent === '放大',
+    );
+    if (layoutToggle) layoutToggle.dataset.layoutToggle = '';
     const transport = el('select');
     transport.setAttribute('aria-label', '模型调用方式');
     for (const [value, label] of [
@@ -100,11 +118,20 @@ export class GuidePanel {
       else this.abort?.abort();
     });
     this.dialog.addEventListener('close', () => {
+      this.bubble.hidden = true;
       this.abort?.abort();
       this.closeEditors();
       this.returnFocus?.focus();
     });
-    document.body.append(this.dialog);
+    this.dialog.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      if (!this.dirty || confirm('草稿尚未保存，关闭后更改不会保留。继续？')) this.dialog.close();
+    });
+    this.dialog.classList.add('sg-floating');
+    this.dialog.setAttribute('aria-label', '剧情手册');
+    this.bubble.hidden = true;
+    document.body.append(this.dialog, this.bubble);
     this.unsubscribe = this.app.host.subscribe(
       () => {
         this.abort?.abort();
@@ -133,6 +160,7 @@ export class GuidePanel {
     this.closeEditors();
     this.unsubscribe();
     this.dialog.remove();
+    this.bubble.remove();
   }
   private closeEditors() {
     document.querySelectorAll<HTMLDialogElement>('.sg-modal').forEach((dialog) => dialog.close());
@@ -144,10 +172,20 @@ export class GuidePanel {
       throw new Error('故事已被编辑或切换，当前修改已保留；旧操作结果可从存档列表查看');
   }
   open() {
-    if (this.dialog.open) return;
+    if (this.dialog.open) {
+      this.restore();
+      return;
+    }
     this.returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
-    this.dialog.showModal();
+    this.dialog.classList.remove('sg-minimized');
+    this.dialog.show();
     void this.safe(() => this.load());
+  }
+  private restore() {
+    this.dialog.classList.remove('sg-minimized');
+    this.bubble.hidden = true;
+    this.title.tabIndex = -1;
+    this.title.focus();
   }
   private message(text: string, error = false) {
     this.status.textContent = text;
@@ -484,7 +522,7 @@ export class GuidePanel {
         el(
           'p',
           '',
-          '选择左侧资料，解析角色已有的经历与路线。没有世界书？也可以从人物出发，创作共同线、分支和结局。',
+          '点击“资料设置”选择资料，解析角色已有的经历与路线。没有世界书？也可以从人物出发，创作共同线、分支和结局。',
         ),
         el('p', 'sg-muted', '默认展示完整攻略；生成后先审阅草稿，再采用为游玩依据。'),
       );

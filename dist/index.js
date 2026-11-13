@@ -4499,7 +4499,7 @@ function diagnosticReport() {
   return {
     format: "story-guide-diagnostics",
     schemaVersion: 1,
-    version: "0.6.1",
+    version: "0.6.2",
     modelSource: "SillyTavern.getContext().generateRaw / \u9152\u9986\u53C2\u6570\u6784\u9020\u4E0ESSE\u89E3\u6790",
     retention: "\u5F53\u524D\u9875\u9762\u5185\u5B58\u6700\u8FD1100\u6761\uFF0C\u5237\u65B0\u6E05\u7A7A",
     entries: entries.map((entry) => ({ ...entry, fields: entry.fields?.slice() }))
@@ -7136,6 +7136,19 @@ var GuidePanel = class {
     heading.append(el("span", "sg-brand", "STORY GUIDE / \u5267\u60C5\u624B\u518C"), this.title);
     header.append(
       heading,
+      button("\u8D44\u6599\u8BBE\u7F6E", () => {
+        this.dialog.classList.toggle("sg-show-settings");
+      }),
+      button("\u653E\u5927", () => {
+        const large = this.dialog.classList.toggle("sg-expanded");
+        const toggle = header.querySelector("[data-layout-toggle]");
+        if (toggle) toggle.textContent = large ? "\u60AC\u6D6E\u9605\u8BFB" : "\u653E\u5927";
+      }),
+      button("\u6536\u8D77", () => {
+        this.dialog.classList.add("sg-minimized");
+        this.bubble.hidden = false;
+        this.bubble.focus();
+      }),
       button("\u6392\u67E5\u65E5\u5FD7", openDiagnostics),
       button(
         "\u573A\u666F\u7D20\u6750\u5E93",
@@ -7149,6 +7162,10 @@ var GuidePanel = class {
         if (!this.dirty || confirm("\u8349\u7A3F\u5C1A\u672A\u4FDD\u5B58\uFF0C\u5173\u95ED\u540E\u66F4\u6539\u4E0D\u4F1A\u4FDD\u7559\u3002\u7EE7\u7EED\uFF1F")) this.dialog.close();
       })
     );
+    const layoutToggle = [...header.querySelectorAll("button")].find(
+      (button2) => button2.textContent === "\u653E\u5927"
+    );
+    if (layoutToggle) layoutToggle.dataset.layoutToggle = "";
     const transport = el("select");
     transport.setAttribute("aria-label", "\u6A21\u578B\u8C03\u7528\u65B9\u5F0F");
     for (const [value, label] of [
@@ -7182,11 +7199,20 @@ var GuidePanel = class {
       else this.abort?.abort();
     });
     this.dialog.addEventListener("close", () => {
+      this.bubble.hidden = true;
       this.abort?.abort();
       this.closeEditors();
       this.returnFocus?.focus();
     });
-    document.body.append(this.dialog);
+    this.dialog.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      if (!this.dirty || confirm("\u8349\u7A3F\u5C1A\u672A\u4FDD\u5B58\uFF0C\u5173\u95ED\u540E\u66F4\u6539\u4E0D\u4F1A\u4FDD\u7559\u3002\u7EE7\u7EED\uFF1F")) this.dialog.close();
+    });
+    this.dialog.classList.add("sg-floating");
+    this.dialog.setAttribute("aria-label", "\u5267\u60C5\u624B\u518C");
+    this.bubble.hidden = true;
+    document.body.append(this.dialog, this.bubble);
     this.unsubscribe = this.app.host.subscribe(
       () => {
         this.abort?.abort();
@@ -7235,11 +7261,13 @@ var GuidePanel = class {
   loadId = 0;
   returnFocus;
   unsubscribe;
+  bubble = button("\u5267\u60C5\u624B\u518C", () => this.restore(), "sg-guide-bubble");
   destroy() {
     this.abort?.abort();
     this.closeEditors();
     this.unsubscribe();
     this.dialog.remove();
+    this.bubble.remove();
   }
   closeEditors() {
     document.querySelectorAll(".sg-modal").forEach((dialog) => dialog.close());
@@ -7251,10 +7279,20 @@ var GuidePanel = class {
       throw new Error("\u6545\u4E8B\u5DF2\u88AB\u7F16\u8F91\u6216\u5207\u6362\uFF0C\u5F53\u524D\u4FEE\u6539\u5DF2\u4FDD\u7559\uFF1B\u65E7\u64CD\u4F5C\u7ED3\u679C\u53EF\u4ECE\u5B58\u6863\u5217\u8868\u67E5\u770B");
   }
   open() {
-    if (this.dialog.open) return;
+    if (this.dialog.open) {
+      this.restore();
+      return;
+    }
     this.returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : void 0;
-    this.dialog.showModal();
+    this.dialog.classList.remove("sg-minimized");
+    this.dialog.show();
     void this.safe(() => this.load());
+  }
+  restore() {
+    this.dialog.classList.remove("sg-minimized");
+    this.bubble.hidden = true;
+    this.title.tabIndex = -1;
+    this.title.focus();
   }
   message(text2, error = false) {
     this.status.textContent = text2;
@@ -7577,7 +7615,7 @@ var GuidePanel = class {
         el(
           "p",
           "",
-          "\u9009\u62E9\u5DE6\u4FA7\u8D44\u6599\uFF0C\u89E3\u6790\u89D2\u8272\u5DF2\u6709\u7684\u7ECF\u5386\u4E0E\u8DEF\u7EBF\u3002\u6CA1\u6709\u4E16\u754C\u4E66\uFF1F\u4E5F\u53EF\u4EE5\u4ECE\u4EBA\u7269\u51FA\u53D1\uFF0C\u521B\u4F5C\u5171\u540C\u7EBF\u3001\u5206\u652F\u548C\u7ED3\u5C40\u3002"
+          "\u70B9\u51FB\u201C\u8D44\u6599\u8BBE\u7F6E\u201D\u9009\u62E9\u8D44\u6599\uFF0C\u89E3\u6790\u89D2\u8272\u5DF2\u6709\u7684\u7ECF\u5386\u4E0E\u8DEF\u7EBF\u3002\u6CA1\u6709\u4E16\u754C\u4E66\uFF1F\u4E5F\u53EF\u4EE5\u4ECE\u4EBA\u7269\u51FA\u53D1\uFF0C\u521B\u4F5C\u5171\u540C\u7EBF\u3001\u5206\u652F\u548C\u7ED3\u5C40\u3002"
         ),
         el("p", "sg-muted", "\u9ED8\u8BA4\u5C55\u793A\u5B8C\u6574\u653B\u7565\uFF1B\u751F\u6210\u540E\u5148\u5BA1\u9605\u8349\u7A3F\uFF0C\u518D\u91C7\u7528\u4E3A\u6E38\u73A9\u4F9D\u636E\u3002")
       );
