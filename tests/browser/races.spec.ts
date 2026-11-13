@@ -1,8 +1,9 @@
+import { openGuide } from './helpers';
 import { test, expect } from '@playwright/test';
 test('切换聊天会关闭旧编辑器，不能把旧节点写入新聊天', async ({ page }) => {
   page.on('dialog', (dialog) => void dialog.accept());
   await page.goto('/');
-  await page.getByRole('button', { name: '打开剧情指南' }).click();
+  await openGuide(page);
   await page.getByRole('button', { name: '生成故事草稿' }).click();
   await expect(page.getByRole('heading', { name: '旧城来信' })).toBeVisible();
   await page.getByRole('button', { name: '采用此故事' }).click();

@@ -1,5 +1,11 @@
 # 宿主契约与技术决策
 
+## 0.2.1 入口布局（FR-01）
+
+核对本机1.19.0的 scripts/extensions.js、scripts/templates/wandMenu.html 和 caption 扩展：initExtensions 先创建 #extensionsMenu，菜单项使用 extension_container、list-group-item、extensionsMenuExtensionButton 等类，宿主统一处理菜单显隐。扩展只向该容器追加自有按钮，不点击发送按钮或改输入框；缺少菜单时使用可清理的 MutationObserver 等待其挂载，设置入口仍可用。
+
+设置栏挂载到原有 #extensions_settings2（回退 #extensions_settings），用 details/summary 实现默认折叠与键盘操作，复用 inline-drawer-toggle/inline-drawer-header 外观类。summary 阻止 click 冒泡，避免酒馆委托的折叠逻辑与原生 details 双重切换；自有 toggle 事件更新箭头。所有宿主DOM接入集中到 src/host/entry-points.ts，初始化和卸载均清理自有节点及观察器，不改动其他扩展入口。
+
 ## 0.2.0 素材库契约
 
 复用既有账号与角色身份，不新增宿主 API。IndexedDB v1 的 records 新增 `['material', user, character, id]` 与 `['material-favorite', user, character, id]` 键，不迁移故事记录。单条写入和收藏切换等事务完成才返回；个人素材最多 200 条，收藏最多 500 条，新增计数与写入在同一事务完成。素材带 schemaVersion=1，来源包含 label、text、start、end，摘录以 text.slice(start,end) 验证；原文 20000 字符、摘录 2000 字符。个人条目与内置条目使用不同 ID 前缀。只保存用户主动粘贴内容，无新增网络请求。备份导出是素材专用格式，不混用故事导入。

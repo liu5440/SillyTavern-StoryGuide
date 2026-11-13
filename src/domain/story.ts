@@ -87,7 +87,7 @@ export function visibleNodes(story: Story, run: ProgressView | undefined, spoile
 export function visibleStory(story: Story, run: ProgressView | undefined, spoilers: boolean): Story {
   const nodes = visibleNodes(story, run, spoilers); const ids = new Set(nodes.map(n => n.id));
   // 无剧透时整体梗概和原始来源都可能透露隐藏结局，必须屏蔽。
-  return { ...story, summary: spoilers ? story.summary : '开启完整攻略可查看故事梗概与原文依据。', sources: spoilers ? story.sources : [], nodes: nodes.map(n => spoilers ? n : { ...n, refs: [] }), edges: story.edges.filter(e => ids.has(e.from) && ids.has(e.to)).map(e => spoilers ? e : { ...e, refs: [] }) };
+  return { ...story, summary: spoilers ? story.summary : '开启完整攻略可查看故事梗概与原文依据。', sources: spoilers ? story.sources : [], nodes: nodes.map(n => spoilers ? n : { ...n, refs: [] }), edges: story.edges.filter(e => ids.has(e.from) && ids.has(e.to)).map(e => spoilers ? e : { ...e, label: '继续探索', condition: '条件未公开，请自然探索', refs: [] }) };
 }
 export function fingerprint(text: string): string {
   let hash = 2166136261;

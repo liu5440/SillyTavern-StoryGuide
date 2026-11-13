@@ -59,6 +59,7 @@ try {
     return { avatar, name: next.characters[index].name };
   });
   // 只在测试页中打开扩展，不操作原用户浏览器。
+  await page.locator('#story-guide-settings summary').evaluate((summary) => summary.click());
   await page.locator('#story-guide-settings button').evaluate((button) => button.click());
   await page.getByRole('heading', { name: `${result.name}的剧情指南` }).waitFor();
   await page.locator('.sg-status').filter({ hasText: '条资料已读取' }).waitFor();

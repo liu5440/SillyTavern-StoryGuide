@@ -26,6 +26,7 @@ try {
   const open = async () => {
     await page.locator('#story-guide-settings').waitFor({ state: 'attached', timeout: 60000 });
     await selectTestCharacter();
+    await page.locator('#story-guide-settings summary').evaluate((summary) => summary.click());
     await page.locator('#story-guide-settings button').evaluate((button) => button.click());
     await expect(page.locator('.sg-status')).toContainText('条资料已读取');
     await page.getByRole('button', { name: '场景素材库', exact: true }).click();

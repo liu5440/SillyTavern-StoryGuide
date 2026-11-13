@@ -4078,15 +4078,7 @@ var nodeSchema = z.object({
   spoiler: z.boolean(),
   locked: z.boolean()
 }).strict();
-var edgeSchema = z.object({
-  id,
-  from: id,
-  to: id,
-  label: text,
-  condition: text,
-  provenance: provenanceSchema,
-  refs: z.array(refSchema).max(30)
-}).strict();
+var edgeSchema = z.object({ id, from: id, to: id, label: text, condition: text, provenance: provenanceSchema, refs: z.array(refSchema).max(30) }).strict();
 var storySchema = z.object({
   schemaVersion: z.literal(1),
   id,
@@ -4100,22 +4092,9 @@ var storySchema = z.object({
   sources: z.array(sourceSchema).max(2e3),
   nodes: z.array(nodeSchema).max(500),
   edges: z.array(edgeSchema).max(1500),
-  positions: z.record(
-    z.object({ x: z.number().finite().min(0).max(2e4), y: z.number().finite().min(0).max(2e4) }).strict()
-  )
+  positions: z.record(z.object({ x: z.number().finite().min(0).max(2e4), y: z.number().finite().min(0).max(2e4) }).strict())
 }).strict();
-var runSchema = z.object({
-  schemaVersion: z.literal(1),
-  storyId: id,
-  revision: z.number().int().positive(),
-  chatKey: id,
-  current: z.string().max(180),
-  states: z.record(z.enum(["done", "skipped", "pending"])),
-  variables: z.record(z.union([z.boolean(), z.number().finite(), z.string().max(200)])),
-  choices: z.array(id).max(1500),
-  transcript: z.string().max(100),
-  needsReview: z.boolean()
-}).strict();
+var runSchema = z.object({ schemaVersion: z.literal(1), storyId: id, revision: z.number().int().positive(), chatKey: id, current: z.string().max(180), states: z.record(z.enum(["done", "skipped", "pending"])), variables: z.record(z.union([z.boolean(), z.number().finite(), z.string().max(200)])), choices: z.array(id).max(1500), transcript: z.string().max(100), needsReview: z.boolean() }).strict();
 function parseStory(value) {
   const raw = JSON.stringify(value);
   if (!raw || raw.length > 8e6) throw new Error("\u6545\u4E8B\u6587\u4EF6\u8D85\u8FC7 8 MB \u5B57\u7B26\u9650\u5236");
@@ -4131,8 +4110,7 @@ function validateGraph(story) {
   if (sources.size !== story.sources.length) errors.push("\u6765\u6E90 ID \u91CD\u590D");
   for (const item of [...story.nodes, ...story.edges]) {
     if (item.provenance === "explicit" && item.refs.length === 0) errors.push(`${item.id} \u7F3A\u5C11\u539F\u6587\u6765\u6E90`);
-    if (story.mode === "analyze" && item.provenance === "original")
-      errors.push(`${item.id} \u89E3\u6790\u6A21\u5F0F\u4E0D\u80FD\u6DF7\u5165\u539F\u521B\u4E8B\u4EF6`);
+    if (story.mode === "analyze" && item.provenance === "original") errors.push(`${item.id} \u89E3\u6790\u6A21\u5F0F\u4E0D\u80FD\u6DF7\u5165\u539F\u521B\u4E8B\u4EF6`);
     for (const ref of item.refs) {
       const source = sources.get(ref.sourceId);
       if (!source) errors.push(`${item.id} \u6765\u6E90\u4E0D\u5B58\u5728\uFF1A${ref.sourceId}`);
@@ -4159,11 +4137,10 @@ function validateGraph(story) {
     visited.add(key);
     return false;
   }
-  for (const key of ids)
-    if (visit(key)) {
-      errors.push("\u5267\u60C5\u56FE\u5B58\u5728\u73AF\u8DEF");
-      break;
-    }
+  for (const key of ids) if (visit(key)) {
+    errors.push("\u5267\u60C5\u56FE\u5B58\u5728\u73AF\u8DEF");
+    break;
+  }
   if (story.mode === "create") {
     const starts = story.nodes.filter((n) => n.type === "start");
     if (starts.length !== 1) errors.push("\u539F\u521B\u6545\u4E8B\u5FC5\u987B\u6709\u4E14\u53EA\u6709\u4E00\u4E2A\u5F00\u573A");
@@ -4178,29 +4155,18 @@ function validateGraph(story) {
     if (!story.nodes.some((n) => n.type === "ending" && reached.has(n.id))) errors.push("\u7F3A\u5C11\u53EF\u8FBE\u7ED3\u5C40");
     for (const node of story.nodes) {
       if (node.type !== "ending" && !adjacency.get(node.id)?.length) errors.push(`${node.title} \u6CA1\u6709\u51FA\u53E3`);
-      if (node.type === "ending" && adjacency.get(node.id)?.length)
-        errors.push(`${node.title} \u7ED3\u5C40\u4E0D\u80FD\u6709\u540E\u7EED\u8FDE\u7EBF`);
+      if (node.type === "ending" && adjacency.get(node.id)?.length) errors.push(`${node.title} \u7ED3\u5C40\u4E0D\u80FD\u6709\u540E\u7EED\u8FDE\u7EBF`);
     }
   }
   return [...new Set(errors)];
 }
 function visibleNodes(story, run, spoilers) {
-  return story.nodes.filter(
-    (n) => spoilers || !n.spoiler || run?.current === n.id || run?.states[n.id] === "done"
-  );
+  return story.nodes.filter((n) => spoilers || !n.spoiler || run?.current === n.id || run?.states[n.id] === "done");
 }
 function visibleStory(story, run, spoilers) {
   const nodes = visibleNodes(story, run, spoilers);
   const ids = new Set(nodes.map((n) => n.id));
-  return {
-    ...story,
-    summary: spoilers ? story.summary : "\u5F00\u542F\u5B8C\u6574\u653B\u7565\u53EF\u67E5\u770B\u6545\u4E8B\u6897\u6982\u4E0E\u539F\u6587\u4F9D\u636E\u3002",
-    sources: spoilers ? story.sources : [],
-    nodes: nodes.map((n) => spoilers ? n : { ...n, refs: [] }),
-    edges: story.edges.filter((e) => ids.has(e.from) && ids.has(e.to)).map(
-      (e) => spoilers ? e : { ...e, label: "\u7EE7\u7EED\u63A2\u7D22", condition: "\u6761\u4EF6\u672A\u516C\u5F00\uFF0C\u8BF7\u81EA\u7136\u63A2\u7D22", refs: [] }
-    )
-  };
+  return { ...story, summary: spoilers ? story.summary : "\u5F00\u542F\u5B8C\u6574\u653B\u7565\u53EF\u67E5\u770B\u6545\u4E8B\u6897\u6982\u4E0E\u539F\u6587\u4F9D\u636E\u3002", sources: spoilers ? story.sources : [], nodes: nodes.map((n) => spoilers ? n : { ...n, refs: [] }), edges: story.edges.filter((e) => ids.has(e.from) && ids.has(e.to)).map((e) => spoilers ? e : { ...e, label: "\u7EE7\u7EED\u63A2\u7D22", condition: "\u6761\u4EF6\u672A\u516C\u5F00\uFF0C\u8BF7\u81EA\u7136\u63A2\u7D22", refs: [] }) };
 }
 function fingerprint(text2) {
   let hash = 2166136261;
@@ -6453,26 +6419,71 @@ ${next.summary}
   }
 };
 
+// src/host/entry-points.ts
+function mountEntryPoints(open) {
+  const target = document.querySelector("#extensions_settings2") ?? document.querySelector("#extensions_settings");
+  const settings = el("details", "sg-settings inline-drawer");
+  settings.id = "story-guide-settings";
+  const summary = el("summary", "sg-settings-summary inline-drawer-toggle inline-drawer-header");
+  const icon = el("span", "fa-solid fa-circle-chevron-down inline-drawer-icon down");
+  icon.setAttribute("aria-hidden", "true");
+  summary.append(el("b", "", "\u5267\u60C5\u6307\u5357"), icon);
+  summary.addEventListener("click", (event) => event.stopPropagation());
+  settings.addEventListener("toggle", () => {
+    icon.classList.toggle("fa-circle-chevron-up", settings.open);
+    icon.classList.toggle("fa-circle-chevron-down", !settings.open);
+    icon.classList.toggle("up", settings.open);
+    icon.classList.toggle("down", !settings.open);
+  });
+  const content = el("div", "sg-settings-content");
+  content.append(el("p", "", "\u8BFB\u61C2\u89D2\u8272\u7684\u6545\u4E8B\uFF0C\u63A2\u7D22\u81EA\u5DF1\u7684\u8DEF\u7EBF\u3002"), button("\u6253\u5F00\u5267\u60C5\u6307\u5357", open, "sg-primary"));
+  settings.append(summary, content);
+  if (target) target.append(settings);
+  else console.warn("[\u5267\u60C5\u6307\u5357] \u672A\u627E\u5230\u6269\u5C55\u8BBE\u7F6E\u533A\u57DF\uFF0C\u53EF\u901A\u8FC7\u804A\u5929\u6269\u5C55\u83DC\u5355\u6253\u5F00");
+  const container = el("div", "extension_container");
+  container.id = "story-guide-menu-container";
+  const item = button(
+    "",
+    () => {
+      const trigger = document.querySelector("#extensionsMenuButton");
+      if (trigger instanceof HTMLElement) trigger.focus();
+      open();
+    },
+    "sg-menu-entry list-group-item flex-container flexGap5"
+  );
+  item.id = "story-guide-menu-entry";
+  const menuIcon = el("span", "fa-solid fa-book-open extensionsMenuExtensionButton");
+  menuIcon.setAttribute("aria-hidden", "true");
+  item.append(menuIcon, el("span", "", "\u5267\u60C5\u6307\u5357"));
+  container.append(item);
+  const attachMenu = () => {
+    const menu = document.querySelector("#extensionsMenu");
+    if (!menu) return false;
+    menu.append(container);
+    return true;
+  };
+  let observer;
+  if (!attachMenu()) {
+    observer = new MutationObserver(() => {
+      if (attachMenu()) observer?.disconnect();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+  return () => {
+    observer?.disconnect();
+    settings.remove();
+    container.remove();
+  };
+}
+
 // src/entry.ts
 function initialize() {
   window.storyGuideCleanup?.();
-  const target = document.querySelector("#extensions_settings2") ?? document.querySelector("#extensions_settings");
-  if (!target) {
-    console.warn("[\u5267\u60C5\u6307\u5357] \u672A\u627E\u5230\u9152\u9986\u6269\u5C55\u8BBE\u7F6E\u533A\u57DF");
-    return;
-  }
   const panel = new GuidePanel(new GuideController());
-  const settings = el("div", "sg-settings");
-  settings.id = "story-guide-settings";
-  settings.append(
-    el("h3", "", "\u5267\u60C5\u6307\u5357"),
-    el("p", "", "\u8BFB\u61C2\u89D2\u8272\u7684\u6545\u4E8B\uFF0C\u63A2\u7D22\u81EA\u5DF1\u7684\u8DEF\u7EBF\u3002"),
-    button("\u6253\u5F00\u5267\u60C5\u6307\u5357", () => panel.open(), "sg-primary")
-  );
-  target.append(settings);
+  const removeEntries = mountEntryPoints(() => panel.open());
   window.storyGuideCleanup = () => {
     panel.destroy();
-    settings.remove();
+    removeEntries();
     delete window.storyGuideCleanup;
   };
 }

@@ -1,9 +1,10 @@
+import { openGuide } from './helpers';
 import { test, expect } from '@playwright/test';
 
 test('素材库无需故事即可筛选收藏复制，刷新保留收藏且不发送聊天', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/');
-  await page.getByRole('button', { name: '打开剧情指南' }).click();
+  await openGuide(page);
   await expect(page.locator('.sg-status')).toContainText('条资料已读取');
   await page.getByRole('button', { name: '场景素材库', exact: true }).click();
   await expect(page.locator('.sg-material-card')).toHaveCount(16);
@@ -17,7 +18,7 @@ test('素材库无需故事即可筛选收藏复制，刷新保留收藏且不�
   expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('缎面');
   expect(await page.evaluate(() => window.SillyTavern?.getContext().chat?.length)).toBe(0);
   await page.reload();
-  await page.getByRole('button', { name: '打开剧情指南' }).click();
+  await openGuide(page);
   await expect(page.locator('.sg-status')).toContainText('条资料已读取');
   await page.getByRole('button', { name: '场景素材库', exact: true }).click();
   await page.getByLabel('只看收藏').check();
@@ -26,7 +27,7 @@ test('素材库无需故事即可筛选收藏复制，刷新保留收藏且不�
 
 test('对话选区预览保存、来源纯文本、个人备份与跨聊天关闭', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: '打开剧情指南' }).click();
+  await openGuide(page);
   await expect(page.locator('.sg-status')).toContainText('条资料已读取');
   await page.getByRole('button', { name: '场景素材库', exact: true }).click();
   await page.getByRole('button', { name: '整理粘贴的对话' }).click();
