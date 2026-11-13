@@ -9,29 +9,45 @@ const sourceSchema = z
     text: z.string().min(1).max(20000),
     start: z.number().int().nonnegative(),
     end: z.number().int().positive(),
+    chat: z
+      .object({
+        chatKey: z.string().min(1).max(1000),
+        messageNumber: z.number().int().positive(),
+        role: z.enum(['user', 'character']),
+        speaker: z.string().max(160),
+        transcript: z.string().min(1).max(100),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export const materialIdSchema = z
   .string()
   .regex(/^(builtin|personal):[a-zA-Z0-9-]+$/)
   .max(180);
-export const materialSchema = z
+export const materialContentSchema = z
   .object({
-    schemaVersion: z.literal(1),
-    id: materialIdSchema,
     title: z.string().trim().min(1).max(100),
     category: categorySchema,
     tags: z.array(z.string().trim().min(1).max(30)).max(10),
     description: z.string().trim().min(1).max(2000),
     opening: z.string().trim().min(1).max(2000),
+  })
+  .strict();
+export const materialSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    id: materialIdSchema,
+    ...materialContentSchema.shape,
     origin: z.enum(['builtin', 'dialogue']),
+    method: z.literal('ai').optional(),
     quote: z.string().max(2000),
     source: sourceSchema.optional(),
   })
   .strict()
   .superRefine((card, ctx) => {
     if (card.origin === 'builtin') {
-      if (!card.id.startsWith('builtin:') || card.source || card.quote)
+      if (!card.id.startsWith('builtin:') || card.source || card.quote || card.method)
         ctx.addIssue({ code: 'custom', message: '内置原创不能伪造来源' });
     } else if (
       !card.id.startsWith('personal:') ||
@@ -43,6 +59,8 @@ export const materialSchema = z
     ) {
       ctx.addIssue({ code: 'custom', message: '摘录必须对应对话中的有效选区' });
     }
+    if (card.method === 'ai' && !card.source?.chat)
+      ctx.addIssue({ code: 'custom', message: 'AI素材缺少聊天来源' });
   });
 export type Material = z.infer<typeof materialSchema>;
 export type MaterialCategory = z.infer<typeof categorySchema>;
@@ -78,5 +96,5 @@ export function filterMaterials(
   );
 }
 export function materialText(card: Material): string {
-  return `${card.title}\n${materialCategories[card.category]} · ${card.tags.join(' / ')}\n${card.origin === 'builtin' ? '内置原创素材 · 非角色原设定' : '用户改编 · 非角色原设定'}\n${card.description}\n剧情开场：${card.opening}`;
+  return `${card.title}\n${materialCategories[card.category]} · ${card.tags.join(' / ')}\n${card.origin === 'builtin' ? '内置原创素材 · 非角色原设定' : card.method === 'ai' ? 'AI归纳 / 原创开场 · 非原文事实' : '用户改编 · 非角色原设定'}\n${card.description}\n剧情开场：${card.opening}`;
 }

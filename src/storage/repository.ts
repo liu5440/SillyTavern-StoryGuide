@@ -20,19 +20,34 @@ export class Repository {
     mode: IDBTransactionMode,
     operation: (store: IDBObjectStore) => IDBRequest<T>,
     failure = '本地存储失败；请导出备份并检查可用空间',
+    signal?: AbortSignal,
   ): Promise<T> {
     const db = await this.db();
     return new Promise((resolve, reject) => {
       const tx = db.transaction('records', mode);
       const request = operation(tx.objectStore('records'));
-      tx.oncomplete = () => {
+      const cancel = () => {
+        try {
+          tx.abort();
+        } catch (error) {
+          // 已越过数据库提交点时不能回滚；最终以complete/abort的真实结果为准。
+          if (!(error instanceof DOMException && error.name === 'InvalidStateError')) reject(error);
+        }
+      };
+      const cleanup = () => {
+        signal?.removeEventListener('abort', cancel);
         db.close();
+      };
+      tx.oncomplete = () => {
+        cleanup();
         resolve(request.result);
       };
       tx.onabort = tx.onerror = () => {
-        db.close();
-        reject(new Error(failure));
+        cleanup();
+        reject(new Error(signal?.aborted ? '已取消保存，事务已回滚' : failure));
       };
+      signal?.addEventListener('abort', cancel, { once: true });
+      if (signal?.aborted) cancel();
     });
   }
   async saveStory(user: string, story: Story): Promise<void> {
@@ -44,20 +59,47 @@ export class Repository {
     return rows.map((row) => materialSchema.parse(row));
   }
   async saveMaterial(user: string, character: string, card: Material): Promise<void> {
-    const valid = materialSchema.parse(card);
-    if (valid.origin !== 'dialogue') throw new Error('内置原创不能覆盖为个人条目');
+    return this.saveMaterials(user, character, [card]);
+  }
+  async saveMaterials(
+    user: string,
+    character: string,
+    cards: Material[],
+    checkCurrent?: () => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const valid = z.array(materialSchema).min(1).max(8).parse(cards);
+    if (valid.some((card) => card.origin !== 'dialogue')) throw new Error('内置原创不能覆盖为个人条目');
+    if (new Set(valid.map((card) => card.id)).size !== valid.length) throw new Error('本批次素材ID重复');
     const range = IDBKeyRange.bound(['material', user, character], ['material', user, character, []]);
     await this.transact(
       'readwrite',
       (store) => {
         const count = store.count(range);
         count.onsuccess = () => {
-          if (count.result >= 200) store.transaction.abort();
-          else store.add(valid, ['material', user, character, valid.id]);
+          try {
+            checkCurrent?.();
+          } catch {
+            store.transaction.abort();
+            return;
+          }
+          if (count.result + valid.length > 200) store.transaction.abort();
+          else
+            for (const card of valid) {
+              const write = store.add(card, ['material', user, character, card.id]);
+              write.onsuccess = () => {
+                try {
+                  checkCurrent?.();
+                } catch {
+                  store.transaction.abort();
+                }
+              };
+            }
         };
         return count;
       },
       '个人素材保存失败：每个角色最多200条且同ID不能覆盖；请导出并清理素材或检查可用空间',
+      signal,
     );
   }
   async loadMaterialFavorites(user: string, character: string): Promise<string[]> {

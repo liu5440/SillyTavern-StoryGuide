@@ -70,12 +70,16 @@
           MESSAGE_SWIPED: 'swipe',
         },
         eventSource: {
-          on: (key, fn) => handlers.set(key, fn),
-          removeListener: (key) => handlers.delete(key),
+          on: (key, fn) => {
+            if (!handlers.has(key)) handlers.set(key, new Set());
+            handlers.get(key).add(fn);
+          },
+          removeListener: (key, fn) => handlers.get(key)?.delete(fn),
         },
       };
       window.SillyTavern = { getContext: () => window.testContext };
-      window.testSwitch = () => handlers.get('chat')?.();
+      window.testSwitch = () => [...(handlers.get('chat') || [])].forEach((fn) => fn());
+      window.testEdit = () => [...(handlers.get('edit') || [])].forEach((fn) => fn());
     </script>
     <script type="module" src="/dist/index.js"></script>
   </body>

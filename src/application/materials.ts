@@ -1,6 +1,7 @@
 import type { GuideController } from './controller';
 import type { ContextSnapshot } from '../host/tavern';
 import { builtinMaterials, extractMaterial, type MaterialInput } from '../domain/materials';
+import { ChatMaterialsController } from './chat-materials';
 
 /** 素材不挂接故事版本或聊天进度；只使用捕获的账号、角色身份。 */
 export class MaterialsController {
@@ -10,6 +11,12 @@ export class MaterialsController {
   ) {}
   guard() {
     this.app.guard(this.snapshot);
+  }
+  chatController() {
+    return new ChatMaterialsController(this.app.host, this.app.repository, this.snapshot);
+  }
+  watchChat(changed: () => void) {
+    return this.app.host.subscribe(changed, changed);
   }
   async load() {
     this.guard();

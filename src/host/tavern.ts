@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { fingerprint, type Source } from '../domain/story';
+import { selectChatMessages } from '../domain/chat-materials';
 
 type EventSource = {
   on: (name: string, callback: () => void) => void;
@@ -10,7 +11,7 @@ type TavernContext = {
   groupId?: string;
   characters: unknown[];
   chatId?: string;
-  chat?: { mes?: string; is_user?: boolean }[];
+  chat?: { mes?: string; is_user?: boolean; is_system?: boolean; name?: string }[];
   chatMetadata?: Record<string, unknown>;
   getCurrentChatId?: () => string;
   getWorldInfoNames?: () => string[];
@@ -184,6 +185,18 @@ export class TavernHost implements Host {
   }
   transcript(): string {
     return fingerprint(JSON.stringify((this.context.chat ?? []).map((m) => [m.is_user, m.mes])));
+  }
+  chatLength(snapshot: ContextSnapshot): number {
+    if (!this.isCurrent(snapshot)) throw new Error('角色或聊天已切换，请重新打开');
+    if (!Array.isArray(this.context.chat)) throw new Error('当前酒馆未提供聊天记录');
+    return this.context.chat.length;
+  }
+  modelConnection(): string {
+    return this.context.mainApi ?? '当前连接';
+  }
+  readChat(snapshot: ContextSnapshot, start: number, end: number) {
+    if (!this.isCurrent(snapshot)) throw new Error('角色或聊天已切换，请重新打开');
+    return selectChatMessages(this.context.chat, start, end);
   }
   isCurrent(snapshot: ContextSnapshot): boolean {
     try {

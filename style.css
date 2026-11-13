@@ -555,6 +555,18 @@
 .sg-material-card h3 {
   margin: 10px 0;
 }
+.sg-chat-message,
+.sg-chat-draft {
+  border: 1px solid var(--sg-line);
+  border-radius: 8px;
+  margin: 10px 0;
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+.sg-chat-message-list {
+  max-height: 260px;
+  overflow: auto;
+}
 .sg-material-opening {
   border-left: 3px solid #bda780;
   padding-left: 12px;

@@ -8,6 +8,7 @@ import {
   type MaterialCategory,
 } from '../domain/materials';
 import { el, button, check, field, showModal, download } from './dom';
+import { openChatMaterials } from './chat-materials';
 
 /** 仅展示与收集用户选区；不读取聊天 DOM、不请求模型、不向聊天写入内容。 */
 export function openMaterials(app: MaterialsController) {
@@ -72,7 +73,7 @@ export function openMaterials(app: MaterialsController) {
           el(
             'span',
             'sg-badge',
-            `${materialCategories[card.category]} · ${card.origin === 'builtin' ? '内置原创' : '对话摘录 / 用户改编'}`,
+            `${materialCategories[card.category]} · ${card.origin === 'builtin' ? '内置原创' : card.method === 'ai' ? '对话摘录 / AI归纳' : '对话摘录 / 用户改编'}`,
           ),
           el('h3', '', card.title),
           el('small', 'sg-muted', card.tags.join(' · ')),
@@ -111,6 +112,14 @@ export function openMaterials(app: MaterialsController) {
                   ),
                   el('blockquote', '', card.quote),
                 );
+                if (source.chat)
+                  sourceBody.append(
+                    el(
+                      'p',
+                      'sg-muted',
+                      `聊天：${source.chat.chatKey} · 第${source.chat.messageNumber}条 · ${source.chat.speaker}。这是保存时的消息快照，后续编辑聊天可能改变序号或内容。`,
+                    ),
+                  );
                 const details = el('details');
                 details.append(
                   el('summary', '', '查看保存的完整对话'),
@@ -147,6 +156,12 @@ export function openMaterials(app: MaterialsController) {
     controls.append(search.root, category, onlyFavorites.root, onlyPersonal.root);
     const tools = el('div', 'sg-toolbar');
     tools.append(
+      button('从当前聊天整理', () =>
+        openChatMaterials(app, async () => {
+          await reload();
+          message('聊天素材已保存到当前浏览器');
+        }),
+      ),
       button('整理粘贴的对话', () =>
         openExtractor(app, async () => {
           await reload();
