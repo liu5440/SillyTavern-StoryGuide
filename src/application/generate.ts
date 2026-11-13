@@ -15,6 +15,40 @@ import { storyPrompt, repairPrompt, draftContract } from '../ai/prompts';
 const draftSchema = z
   .object({ title: z.string(), summary: z.string(), nodes: z.array(nodeSchema), edges: z.array(edgeSchema) })
   .strict();
+/** 仅保存预定义错误码，避免把模型生成的节点 ID 或来源名写入日志。 */
+class DraftGraphError extends Error {
+  readonly fields: string[];
+  constructor(errors: string[]) {
+    super(errors.join('；'));
+    const categories: [string, string][] = [
+      ['缺少原文来源', 'refs: missing_source'],
+      ['来源不存在', 'refs.sourceId: unknown_source'],
+      ['摘录不在原文中', 'refs.quote: invalid_quote'],
+      ['解析模式不能混入原创事件', 'provenance: original_in_analysis'],
+      ['ID 重复', 'id: duplicate'],
+      ['节点不存在', 'edges: missing_node'],
+      ['环路', 'edges: cycle'],
+      ['有且只有一个开场', 'nodes: invalid_start'],
+      ['不可达', 'nodes: unreachable'],
+      ['缺少可达结局', 'nodes: missing_ending'],
+      ['没有出口', 'nodes: dead_end'],
+      ['结局不能有后续连线', 'edges: ending_successor'],
+    ];
+    this.fields = categories
+      .filter(([text]) => errors.some((error) => error.includes(text)))
+      .map(([, code]) => code);
+  }
+}
+
+function validationReason(error: unknown): string {
+  if (error instanceof z.ZodError)
+    return error.issues
+      .slice(0, 3)
+      .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+      .join('；');
+  if (error instanceof SyntaxError) return '模型返回的内容不是有效 JSON';
+  return error instanceof Error ? error.message.slice(0, 500) : '格式错误';
+}
 /** 校验日志只保留已知结构字段及错误码，禁止记录模型生成的字段名和内容。 */
 function logValidation(error: unknown, repair: boolean) {
   const keys = new Set([
@@ -57,7 +91,9 @@ function logValidation(error: unknown, repair: boolean) {
               (issue) =>
                 `${issue.path.map((part) => (typeof part === 'number' ? part : keys.has(part) ? part : '[未知字段]')).join('.')}: ${issue.code}`,
             )
-        : [],
+        : error instanceof DraftGraphError
+          ? error.fields
+          : [],
   });
 }
 export interface GenerateInput {
@@ -92,7 +128,7 @@ export function decodeDraft(raw: string, snapshot: ContextSnapshot, mode: 'analy
     positions: {},
   });
   const errors = validateGraph(story);
-  if (errors.length) throw new Error(errors.join('；'));
+  if (errors.length) throw new DraftGraphError(errors);
   return story;
 }
 export function splitSources(sources: Source[], limit = 12000): Source[][] {
@@ -166,20 +202,10 @@ export async function generateStory(
       return decodeDraft(raw, context, outputMode);
     } catch (error) {
       logValidation(error, false);
-      const reason =
-        error instanceof z.ZodError
-          ? error.issues
-              .slice(0, 3)
-              .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
-              .join('；')
-          : error instanceof SyntaxError
-            ? '模型返回的内容不是有效 JSON'
-            : error instanceof Error
-              ? error.message.slice(0, 500)
-              : '格式错误';
+      const reason = validationReason(error);
       const fixed = await requestModel(
         host,
-        repairPrompt(raw, reason),
+        repairPrompt(raw, reason, prompt),
         signal,
         `首次校验失败（${reason}），正在进行唯一一次格式修复`,
         progress,
@@ -190,7 +216,7 @@ export async function generateStory(
       } catch (error) {
         logValidation(error, true);
         throw new Error(
-          `格式修复后仍未通过校验，已停止；首次原因：${reason}。请减少资料范围或检查模型输出能力后重试。`,
+          `格式修复后仍未通过校验，已停止；首次原因：${reason}；修复后原因：${validationReason(error)}。请减少资料范围或检查模型输出能力后重试。`,
         );
       }
     }

@@ -81,7 +81,7 @@ export class GuidePanel {
         } finally {
           transport.value = this.app.host.getTransport();
         }
-        this.message('调用方式已切换；聊天素材整理也使用此设置。兼容方式沿用酒馆当前回复长度，不自动重试。');
+        this.message('调用方式已切换；聊天素材整理也使用此设置。单次请求6000 token输出预算，可能增加用量；不改全局回复长度，不自动重试。');
       });
     });
     header.append(transport);

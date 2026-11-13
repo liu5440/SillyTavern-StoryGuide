@@ -4,10 +4,11 @@ import { sendCompatibleCompletion } from '../src/host/chat-completion';
 
 test('原生累计流式只采用最终正文，不拼接重复片段，不附带其他聊天', async () => {
   const text = await sendCompatibleCompletion(
-    async (type, messages) => {
+    async (type, messages, _signal, responseLength) => {
       assert.equal(type, 'normal');
       assert.equal(messages.length, 2);
       assert.equal(messages[1]?.content, '所选资料');
+      assert.equal(responseLength, 6000);
       return async function* () {
         yield { text: '{"a":' };
         yield { text: '{"a":1}' };

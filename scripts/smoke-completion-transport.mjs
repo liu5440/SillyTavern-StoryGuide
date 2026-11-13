@@ -21,6 +21,7 @@ try {
       messageCount: body.messages?.length,
       n: body.n,
       logprobs: body.logprobs,
+      maxTokens: body.max_tokens,
     });
     if (body.stream) {
       const event = (content) => `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`;
@@ -51,6 +52,7 @@ try {
       stream_openai: true,
       n: 3,
       logprobs: 5,
+      openai_max_tokens: 300,
     });
     const messages = [
       { role: 'system', content: '只输出JSON' },
@@ -67,13 +69,18 @@ try {
     return {
       quietHasContent: Boolean(quiet.choices?.[0]?.message?.content),
       streamedJson: text === '{"ok":true}',
-      settingsUnchanged: native.oai_settings.n === 3 && native.oai_settings.logprobs === 5,
+      settingsUnchanged:
+        native.oai_settings.n === 3 &&
+        native.oai_settings.logprobs === 5 &&
+        native.oai_settings.openai_max_tokens === 300,
     };
   });
   if (requests.length !== 2 || requests[0].stream !== false || requests[1].stream !== true)
     throw new Error('流式参数差异验证失败');
   if (requests[1].n !== 1 || requests[1].logprobs !== false || !result.settingsUnchanged)
     throw new Error('请求隔离验证失败');
+  if (requests[0].maxTokens !== 300 || requests[1].maxTokens !== 6000)
+    throw new Error('后台输出预算验证失败');
   console.log(
     JSON.stringify({ nativeHost: true, mockedResponses: true, realModelCalled: false, requests, ...result }),
   );

@@ -4,6 +4,7 @@ export type CompletionSender = (
   type: string,
   messages: { role: string; content: string }[],
   signal: AbortSignal,
+  responseLength: number,
 ) => Promise<unknown>;
 
 /** 消费宿主兼容发送器的累计正文，不调用写聊天的Generate。 */
@@ -20,6 +21,7 @@ export async function sendCompatibleCompletion(
       { role: 'user', content: prompt },
     ],
     signal,
+    6000,
   );
   let text = '';
   if (typeof result === 'function') {
@@ -128,10 +130,11 @@ export async function loadCompletionSender(): Promise<CompletionSender> {
   const getHeaders = core.getRequestHeaders as () => HeadersInit;
   const events = core.eventSource as { emit(name: string, data: unknown): Promise<void> };
   const eventTypes = core.event_types as { CHAT_COMPLETION_SETTINGS_READY: string };
-  return async (_type, messages, signal) => {
+  return async (_type, messages, signal, responseLength) => {
     signal.throwIfAborted();
     const settings: Record<string, unknown> = {
       ...native.oai_settings,
+      openai_max_tokens: responseLength,
       n: 1,
       logprobs: 0,
       function_calling: false,
