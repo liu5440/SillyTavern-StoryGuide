@@ -3,6 +3,7 @@ import { fingerprint, type Source } from '../domain/story';
 import { selectChatMessages } from '../domain/chat-materials';
 import { diagnosticId, recordDiagnostic, classifyFailure } from '../diagnostics';
 import { loadCompletionSender, sendCompatibleCompletion } from './chat-completion';
+import { readWorldbookEntries, type SourceReadIssue } from './worldbook-entries';
 
 type EventSource = {
   on: (name: string, callback: () => void) => void;
@@ -59,17 +60,6 @@ const characterSchema = z
       .optional(),
   })
   .passthrough();
-const entrySchema = z
-  .object({
-    uid: z.union([z.string(), z.number()]).optional(),
-    id: z.union([z.string(), z.number()]).optional(),
-    comment: z.string().optional(),
-    name: z.string().optional(),
-    content: z.string(),
-    disable: z.boolean().optional(),
-    enabled: z.boolean().optional(),
-  })
-  .passthrough();
 export interface ContextSnapshot {
   user: string;
   characterKey: string;
@@ -80,6 +70,8 @@ export interface ContextSnapshot {
   api: string;
   transcript: string;
   skippedSources?: string[];
+  readIssues?: SourceReadIssue[];
+  originalSources?: Source[];
 }
 export class WorldBookReadError extends Error {
   constructor(
@@ -154,6 +146,7 @@ export class TavernHost implements Host {
       .getCurrentUserHandle();
     const bookNames = books ?? (await this.bookOptions()).selected;
     const sources: Source[] = [];
+    const readIssues: SourceReadIssue[] = [];
     const add = (key: string, label: string, text: string, disabled = false) => {
       if (!text.trim()) return;
       sources.push({ id: key, label, text, disabled, fingerprint: fingerprint(text) });
@@ -165,24 +158,13 @@ export class TavernHost implements Host {
         character.data?.[field] ?? character[field] ?? '',
       );
     }
-    const addEntry = (raw: unknown, key: string, label: string) => {
-      const entry = entrySchema.safeParse(raw);
-      if (!entry.success) throw new Error(`世界书条目结构无效：${label}`);
-      const e = entry.data;
-      add(
-        key,
-        `${label} / ${e.comment || e.name || e.uid || e.id || '未命名条目'}`,
-        e.content,
-        e.disable === true || e.enabled === false,
-      );
+    const addEntries = (entries: [string, unknown][], prefix: string, label: string) => {
+      const result = readWorldbookEntries(entries, prefix, label);
+      sources.push(...result.sources);
+      readIssues.push(...result.issues);
     };
     if (!skipped.includes('embedded')) {
-      try {
-        for (const [index, entry] of (character.data?.character_book?.entries ?? []).entries())
-          addEntry(entry, `embedded:${index}`, '内嵌世界书');
-      } catch {
-        throw new WorldBookReadError('内嵌世界书', 'embedded', '条目结构无效');
-      }
+      addEntries((character.data?.character_book?.entries ?? []).map((entry, index) => [String(index), entry]), 'embedded', '内嵌世界书');
     }
     for (const name of bookNames) {
       if (skipped.includes(`book:${name}`)) continue;
@@ -199,12 +181,7 @@ export class TavernHost implements Host {
         .safeParse(data);
       if (!parsed.success)
         throw new WorldBookReadError(name, `book:${name}`, '返回数据没有有效的entries对象');
-      try {
-        for (const [uid, entry] of Object.entries(parsed.data.entries))
-          addEntry(entry, `book:${name}:${uid}`, name);
-      } catch {
-        throw new WorldBookReadError(name, `book:${name}`, '条目结构无效');
-      }
+      addEntries(Object.entries(parsed.data.entries), `book:${name}`, name);
     }
     // 内嵌书与已导入的绑定书经常完全重复；保留首份文本和有效条目，防止重复计费。
     const unique = new Map<string, Source>();
@@ -219,6 +196,8 @@ export class TavernHost implements Host {
       characterName: character.name,
       chatKey,
       sources: [...unique.values()],
+      originalSources: sources,
+      readIssues,
       bookNames,
       api: c.mainApi ?? '当前连接',
       transcript: this.transcript(),

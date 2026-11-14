@@ -6,10 +6,12 @@ import {
   materialText,
   type Material,
   type MaterialCategory,
+  sceneText,
 } from '../domain/materials';
 import { el, button, check, field, showModal, download } from './dom';
 import { openChatMaterials } from './chat-materials';
 import { openChatArchives } from './chat-archives';
+import { sceneFields } from './scene-fields';
 
 /** 仅展示与收集用户选区；不读取聊天 DOM、不请求模型、不向聊天写入内容。 */
 export function openMaterials(app: MaterialsController) {
@@ -74,12 +76,12 @@ export function openMaterials(app: MaterialsController) {
           el(
             'span',
             'sg-badge',
-            `${materialCategories[card.category]} · ${card.origin === 'builtin' ? '内置原创' : card.method === 'ai' ? '对话摘录 / AI归纳' : '对话摘录 / 用户改编'}`,
+            `${card.scene ? '关键场景' : materialCategories[card.category]} · ${card.scene ? (card.scene.summaryOrigin === 'user_manual' ? '人工整理 / 已确认' : card.scene.status === 'confirmed' ? 'AI归纳 / 已确认' : 'AI归纳 / 待审阅') : card.origin === 'builtin' ? '内置原创' : card.method === 'ai' ? '对话摘录 / AI归纳' : '对话摘录 / 用户改编'}`,
           ),
           el('h3', '', card.title),
           el('small', 'sg-muted', card.tags.join(' · ')),
           el('p', '', card.description),
-          el('p', 'sg-material-opening', card.opening),
+          el('pre', 'sg-material-source', card.scene ? sceneText(card) : card.opening),
         );
         const actions = el('div', 'sg-toolbar');
         actions.append(
@@ -100,6 +102,136 @@ export function openMaterials(app: MaterialsController) {
         );
         if (card.source)
           actions.append(
+            button('关联剧情', () =>
+              safe(async () => {
+                const lib = await app.links();
+                guard();
+                showModal('关联已有事件与路线', (editor, close) => {
+                  const feedback = el('p');
+                  const eventChecks = (lib?.events ?? []).map((event) => ({
+                    id: event.id,
+                    control: check(event.title, card.relatedEventIds?.includes(event.id) ?? false),
+                  }));
+                  const routeChecks = (lib?.routes ?? []).map((route) => ({
+                    id: route.id,
+                    control: check(route.title, card.relatedRouteIds?.includes(route.id) ?? false),
+                  }));
+                  const stale =
+                    (card.relatedEventIds ?? []).filter((id) => !lib?.events.some((event) => event.id === id))
+                      .length +
+                    (card.relatedRouteIds ?? []).filter((id) => !lib?.routes.some((route) => route.id === id))
+                      .length;
+                  editor.append(
+                    el('p', 'sg-muted', '只建立引用，不复制事件，不改变正式路线或聊天进度。'),
+                    el('h3', '', '事件'),
+                    ...eventChecks.map((entry) => entry.control.root),
+                    el('h3', '', '路线'),
+                    ...routeChecks.map((entry) => entry.control.root),
+                  );
+                  if (!lib) editor.append(el('p', '', '当前尚无剧情资料库，请先打开剧情工作台整理事件。'));
+                  if (stale)
+                    editor.append(
+                      el('p', 'sg-error', `${stale}项旧关联已失效，保存后将显式移除这些失效引用。`),
+                    );
+                  editor.append(
+                    feedback,
+                    button('保存关联', () =>
+                      safe(async () => {
+                        try {
+                          if (!editor.isConnected) throw new Error('关联窗口已关闭');
+                          await app.setLinks(
+                            card,
+                            eventChecks
+                              .filter((entry) => entry.control.input.checked)
+                              .map((entry) => entry.id),
+                            routeChecks
+                              .filter((entry) => entry.control.input.checked)
+                              .map((entry) => entry.id),
+                            () => {
+                              if (!editor.isConnected) throw new Error('关联窗口已关闭');
+                            },
+                          );
+                          await reload();
+                          close();
+                          message('剧情关联已保存');
+                        } catch (error) {
+                          feedback.textContent = error instanceof Error ? error.message : '关联保存失败';
+                        }
+                      }),
+                    ),
+                  );
+                });
+              }),
+            ),
+            button('历史与恢复', () =>
+              safe(async () => {
+                const history = await app.history(card.id);
+                guard();
+                showModal('场景编辑历史', (historyBody, closeHistory) => {
+                  historyBody.append(el('p', 'sg-muted', '恢复前仍保存当前版本。原文证据不会修改。'));
+                  if (!history.length) historyBody.append(el('p', '', '暂无旧版本'));
+                  history.forEach((previous, index) => {
+                    const details = el('details');
+                    details.append(
+                      el('summary', '', `旧版本 ${index + 1} · ${previous.title}`),
+                      el('pre', 'sg-material-source', materialText(previous)),
+                      button('恢复此版本', () =>
+                        safe(async () => {
+                          await app.update(previous, card);
+                          await reload();
+                          closeHistory();
+                          message('已恢复旧版本');
+                        }),
+                      ),
+                      button('导出此版本', () => download('story-guide-scene-history.json', previous)),
+                    );
+                    historyBody.append(details);
+                  });
+                });
+              }),
+            ),
+            button('编辑整理', () => {
+              showModal('编辑场景归纳', (editor, close) => {
+                const title = field('场景名称', card.title);
+                const description = field('剧情简介（人工修改）', card.description, true);
+                const scene = sceneFields(card);
+                const feedback = el('p');
+                editor.append(title.root, description.root);
+                if (scene) editor.append(scene.root);
+                editor.append(
+                  el(
+                    'p',
+                    'sg-muted',
+                    '原文证据保持不变；修改不会改变路线或聊天进度。旧版本可从“历史与恢复”查看、导出和恢复。',
+                  ),
+                  feedback,
+                  button('保存修改', () =>
+                    safe(async () => {
+                      if (!editor.isConnected) throw new Error('编辑器已关闭');
+                      try {
+                        await app.update(
+                          {
+                            ...card,
+                            title: title.input.value,
+                            description: description.input.value,
+                            ...(scene ? { scene: { ...scene.read(), summaryOrigin: 'user_manual' } } : {}),
+                          },
+                          card,
+                          () => {
+                            if (!editor.isConnected) throw new Error('编辑器已关闭');
+                          },
+                        );
+                        await reload();
+                        close();
+                        message('场景修改已保存');
+                      } catch (error) {
+                        feedback.textContent = error instanceof Error ? error.message : '保存失败';
+                      }
+                    }),
+                  ),
+                );
+              });
+            }),
             button('查看来源', () => {
               showModal('素材来源', (sourceBody) => {
                 const source = card.source;
@@ -127,6 +259,15 @@ export function openMaterials(app: MaterialsController) {
                   el('pre', 'sg-material-source', source.text),
                 );
                 sourceBody.append(details);
+                for (const evidence of card.evidence?.slice(1) ?? []) {
+                  const extra = el('details');
+                  extra.append(
+                    el('summary', '', evidence.label),
+                    el('blockquote', '', evidence.quote),
+                    el('pre', 'sg-material-source', evidence.text),
+                  );
+                  sourceBody.append(extra);
+                }
               });
             }),
             button('删除个人素材', () => {
@@ -183,7 +324,7 @@ export function openMaterials(app: MaterialsController) {
       el(
         'p',
         'sg-muted',
-        '成年角色的非露骨恋爱创作素材。选择后复制使用；内置原创并非角色原设定。个人素材按账号、角色保存在当前浏览器，可导出留存。',
+        '关键场景优先整理事件、选择、关系变化与后果。原文与归纳分开，可编辑和保存；旧版服装等分类仍可阅读。内置原创并非角色原设定。个人素材按账号、角色保存在当前浏览器，可导出留存。',
       ),
       tools,
       controls,
@@ -194,7 +335,7 @@ export function openMaterials(app: MaterialsController) {
     queueMicrotask(() => {
       void safe(async () => {
         await reload();
-        message('选择分类或搜索关键词，找到合适的故事开场。');
+        message('搜索关键场景、事件或人物，查看原文并继续整理。');
       });
     });
   });
@@ -225,6 +366,22 @@ function openExtractor(app: MaterialsController, saved: () => Promise<void>) {
     const description = field('素材描述（用户改编）', '', true);
     description.input.maxLength = 2000;
     const opening = field('剧情开场（用户改编）', '', true);
+    opening.input.placeholder = '可选：仅在你主动新增创作时填写，提取无需开场';
+    const scene = sceneFields({
+      scene: {
+        participants: [],
+        location: '',
+        time: '',
+        context: '',
+        trigger: '',
+        keyEvents: [],
+        choices: [],
+        relationshipChanges: [],
+        consequences: [],
+        summaryOrigin: 'user_manual',
+        status: 'draft',
+      },
+    });
     opening.input.maxLength = 2000;
     const status = el('p');
     status.setAttribute('role', 'status');
@@ -239,7 +396,7 @@ function openExtractor(app: MaterialsController, saved: () => Promise<void>) {
       el(
         'p',
         'sg-muted',
-        '仅整理成年角色的非露骨服装、姿态、互动和场景。原文最多 20000 字符，选区最多 2000 字符；会保存完整粘贴原文以核对来源，请只粘贴愿意留存的内容。不会向模型发送对话。',
+        '整理已有关键场景，记录事件、选择和后果，不需要编写新开场。原文最多20000字符，选区最多2000字符；保存完整粘贴原文以核对来源。不会向模型发送对话。',
       ),
       label.root,
       raw.root,
@@ -264,6 +421,7 @@ function openExtractor(app: MaterialsController, saved: () => Promise<void>) {
       category,
       tags.root,
       description.root,
+      ...(scene ? [scene.root] : []),
       opening.root,
       status,
       button(
@@ -283,6 +441,7 @@ function openExtractor(app: MaterialsController, saved: () => Promise<void>) {
                 .filter(Boolean),
               description: description.input.value,
               opening: opening.input.value,
+              ...(scene ? { scene: scene.read() } : {}),
               source: { ...selection, label: label.input.value },
             };
             const card = extractMaterial(input);

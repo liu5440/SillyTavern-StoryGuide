@@ -25,6 +25,7 @@ export interface ChatMaterialDraft {
   completedBatches: number;
   totalBatches: number;
   error?: string;
+  notes?: string[];
 }
 export class ChatMaterialsController {
   private busy = false;
@@ -89,7 +90,9 @@ export class ChatMaterialsController {
           );
           if (signal.aborted) throw new Error('已取消整理，结果未保存');
           this.guard(selected);
-          const cards = decodeChatMaterials(raw, { ...selected, messages: batch }, messages);
+          const cards = decodeChatMaterials(raw, { ...selected, messages: batch }, messages, (reason) =>
+            (result.notes ??= []).push(`第${index + 1}批：${reason}`),
+          );
           if (result.cards.length + cards.length > 200)
             throw new Error('本次结果超过200条，请先保存或导出已完成部分');
           result.cards.push(...cards);
@@ -129,7 +132,8 @@ export class ChatMaterialsController {
         !original ||
         card.method !== 'ai' ||
         card.quote !== original.quote ||
-        JSON.stringify(card.source) !== JSON.stringify(original.source)
+        JSON.stringify(card.source) !== JSON.stringify(original.source) ||
+        JSON.stringify(card.evidence) !== JSON.stringify(original.evidence)
       )
         throw new Error('草稿来源发生变化，请重新整理');
     }
@@ -163,7 +167,8 @@ export class ChatMaterialsController {
       if (
         !original ||
         JSON.stringify(card.source) !== JSON.stringify(original.source) ||
-        card.quote !== original.quote
+        card.quote !== original.quote ||
+        JSON.stringify(card.evidence) !== JSON.stringify(original.evidence)
       )
         throw new Error('归档引用发生变化');
     }

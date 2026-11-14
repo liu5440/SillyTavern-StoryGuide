@@ -12,6 +12,7 @@ import {
 import { WorldBookReadError, type ContextSnapshot } from '../host/tavern';
 import { el, button, check, field, showModal, download } from './dom';
 import { graph } from './graph';
+import { openWorkspace } from './workspace';
 import { MaterialsController } from '../application/materials';
 import { openMaterials } from './materials';
 import { openDiagnostics } from './diagnostics';
@@ -71,6 +72,16 @@ export class GuidePanel {
         this.bubble.hidden = false;
         this.bubble.focus();
       }),
+      button('打开剧情工作台', () =>
+        this.safe(async () => {
+          if (!this.snapshot) throw new Error('请先等待读取角色资料');
+          this.guardView(this.snapshot);
+          const snapshot = this.snapshot;
+          const tools = this.dialog.querySelector<HTMLDetailsElement>('.sg-phone-tools');
+          if (tools) tools.open = false;
+          await openWorkspace(this.app, snapshot, this.story, () => this.guardView(snapshot));
+        }),
+      ),
       button('排查日志', openDiagnostics),
       button('场景素材库', () =>
         this.safe(() => {
@@ -180,6 +191,7 @@ export class GuidePanel {
   destroy() {
     this.abort?.abort();
     this.closeEditors();
+    document.querySelectorAll<HTMLDialogElement>('.sg-workspace').forEach((dialog) => dialog.close());
     this.unsubscribe();
     this.dialog.remove();
     this.bubble.remove();
@@ -189,7 +201,8 @@ export class GuidePanel {
   }
   private guardView(snapshot: ContextSnapshot, expectedStory?: Story) {
     this.app.guard(snapshot);
-    if (snapshot !== this.snapshot || !this.dialog.open) throw new Error('页面已重新读取，已丢弃旧操作结果');
+    if (snapshot !== this.snapshot || !this.dialog.open || !this.dialog.isConnected)
+      throw new Error('页面已重新读取，已丢弃旧操作结果');
     if (expectedStory && expectedStory !== this.story)
       throw new Error('故事已被编辑或切换，当前修改已保留；旧操作结果可从存档列表查看');
   }
@@ -259,6 +272,8 @@ export class GuidePanel {
   }
   private async load(books?: string[], skipped: string[] = []) {
     const sequence = ++this.loadId;
+    const tools = this.dialog.querySelector<HTMLDetailsElement>('.sg-phone-tools');
+    if (tools) tools.open = false;
     this.abort?.abort();
     this.abort = undefined;
     this.busy = false;
@@ -296,6 +311,8 @@ export class GuidePanel {
       this.message(
         `${snapshot.sources.length} 条资料已读取${snapshot.skippedSources?.length ? ` · 已跳过：${snapshot.skippedSources.join('、')}（资料不完整）` : ''} · 使用酒馆当前 ${snapshot.api} 连接生成 · 存档仅在当前浏览器`,
       );
+      if (snapshot.readIssues?.length)
+        this.message(`有 ${snapshot.readIssues.length} 条资料读取异常，其余资料已保留；请在工作台查看。`);
     } catch (error) {
       if (sequence !== this.loadId || !this.dialog.open) return;
       this.clearContext();

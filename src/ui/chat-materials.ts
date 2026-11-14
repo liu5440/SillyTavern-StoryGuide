@@ -6,6 +6,7 @@ import { materialCategories, type Material } from '../domain/materials';
 import { el, button, check, field, showModal, download } from './dom';
 import { openDiagnostics } from './diagnostics';
 import { diagnosticReport } from '../diagnostics';
+import { sceneFields } from './scene-fields';
 
 /** UI只收集范围与审阅结果，读取、模型调用和写入均由应用层负责。 */
 export function openChatMaterials(materials: MaterialsController, saved: () => Promise<void>) {
@@ -61,6 +62,7 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
       description: HTMLInputElement | HTMLTextAreaElement;
       opening: HTMLInputElement | HTMLTextAreaElement;
       category: HTMLSelectElement;
+      scene?: ReturnType<typeof sceneFields>;
     }[] = [];
     const setBusy = (value: boolean) => {
       busy = value;
@@ -189,7 +191,7 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
             message(
               next.error
                 ? `部分完成：${next.completedBatches}/${next.totalBatches}批。${next.error}。可保存或导出原文归档。`
-                : '模型未生成AI素材；原文已保存到聊天剧情归档，可直接导出。',
+                : `模型未提取关键场景（不代表原文没有剧情）；${next.notes?.join('；') ?? '模型没有给出原因'}。原文已保存到聊天剧情归档，可直接导出或人工整理。`,
               !!next.error,
             );
             return;
@@ -200,6 +202,7 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
             const title = field(`草稿标题${index + 1}`, card.title);
             const description = field(`AI归纳描述${index + 1}`, card.description, true);
             const opening = field(`原创开场${index + 1}`, card.opening, true);
+            const scene = sceneFields(card);
             const category = el('select');
             category.setAttribute('aria-label', `草稿分类${index + 1}`);
             for (const [key, label] of Object.entries(materialCategories)) {
@@ -210,14 +213,22 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
             category.value = card.category;
             row.append(
               keep.root,
-              el('p', 'sg-badge', 'AI归纳 / 原创开场 · 需玩家审阅，并非原文事实'),
+              el(
+                'p',
+                'sg-badge',
+                card.scene
+                  ? '关键场景 / AI归纳 · 待审阅，原文证据独立保留'
+                  : '旧格式 AI归纳 / 原创开场 · 需玩家审阅',
+              ),
               title.root,
               category,
               description.root,
-              opening.root,
+              ...(scene ? [scene.root] : [opening.root]),
               el('small', 'sg-muted', card.source?.label ?? ''),
               el('blockquote', '', card.quote),
             );
+            for (const evidence of card.evidence?.slice(1) ?? [])
+              row.append(el('small', 'sg-muted', evidence.label), el('blockquote', '', evidence.quote));
             edits.push({
               card,
               keep: keep.input,
@@ -225,6 +236,7 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
               description: description.input,
               opening: opening.input,
               category,
+              scene,
             });
             results.append(row);
           }
@@ -248,6 +260,14 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
                     description: edit.description.value,
                     opening: edit.opening.value,
                     category: edit.category.value as Material['category'],
+                    ...(edit.scene
+                      ? {
+                          scene: edit.scene.read(
+                            edit.title.value !== edit.card.title ||
+                              edit.description.value !== edit.card.description,
+                          ),
+                        }
+                      : {}),
                   }));
                 await app.save(draft, cards, abort?.signal);
                 await saved();
@@ -266,7 +286,7 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
           );
           results.append(save);
           message(
-            `${next.error ? `部分完成：${next.completedBatches}/${next.totalBatches}批，${next.error}。` : `已完成${next.totalBatches}批。`}已生成${next.cards.length}条草稿，尚未保存。可保存素材或另存聊天归档。`,
+            `${next.error ? `部分完成：${next.completedBatches}/${next.totalBatches}批，${next.error}。` : `已完成${next.totalBatches}批。`}已生成${next.cards.length}条草稿，尚未保存。${next.notes?.join('；') ?? ''}可保存素材或另存聊天归档。`,
             !!next.error,
           );
         } catch (error) {
@@ -295,6 +315,14 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
               description: edit.description.value,
               opening: edit.opening.value,
               category: edit.category.value as Material['category'],
+              ...(edit.scene
+                ? {
+                    scene: edit.scene.read(
+                      edit.title.value !== edit.card.title ||
+                        edit.description.value !== edit.card.description,
+                    ),
+                  }
+                : {}),
             }))
         : [];
       const labels = [
@@ -397,7 +425,7 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
       el(
         'p',
         'sg-muted',
-        '先把选中的聊天当作故事片段保存：保留完整原文及角色、聊天、消息序号，不调用AI。JSON可交给其他工具继续整理。可选AI整理会发送所选内容至酒馆当前模型，仅归纳适合的非露骨素材；模型失败不影响已保存原文。不会改写或发送聊天。',
+        '先保存完整原文及角色、聊天、消息序号，无需AI。可选AI整理发送所选内容至酒馆当前模型，优先整理关键事件、选择、关系变化及后果，不续写或默认生成开场。归纳和逐字证据分开；模型失败或未提取不影响已保存原文。不会改写或发送聊天。',
       ),
       info,
       scopeLabel,

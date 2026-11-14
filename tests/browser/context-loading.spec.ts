@@ -1,6 +1,26 @@
 import { openGuide } from './helpers';
 import { test, expect } from '@playwright/test';
 
+test('损坏条目单独记录，同书有效条目仍可读取', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(() => {
+    const w = window as unknown as { testContext: Record<string, unknown> };
+    w.testContext.characters = [
+      { avatar: 'mixed.png', name: '混合资料', data: { extensions: { world: '混合书' } } },
+    ];
+    w.testContext.loadWorldInfo = async () => ({
+      entries: {
+        good: { content: '可保留的有效背景', comment: '有效背景' },
+        broken: { content: 42 },
+      },
+    });
+  });
+  await openGuide(page);
+  await expect(page.locator('.sg-sidebar')).toContainText('混合书 / 有效背景');
+  await expect(page.locator('.sg-load-error')).toHaveCount(0);
+  await expect(page.locator('.sg-panel')).toContainText('有 1 条资料读取异常，其余资料已保留');
+});
+
 test('切换立即清空旧资料，失败可重试并跳过指定世界书', async ({ page }) => {
   await page.goto('/');
   await openGuide(page);

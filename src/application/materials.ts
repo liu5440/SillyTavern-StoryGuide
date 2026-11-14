@@ -1,13 +1,21 @@
 import type { GuideController } from './controller';
 import type { ContextSnapshot } from '../host/tavern';
-import { builtinMaterials, extractMaterial, type MaterialInput } from '../domain/materials';
+import {
+  builtinMaterials,
+  extractMaterial,
+  materialSchema,
+  type Material,
+  type MaterialInput,
+} from '../domain/materials';
 import { ChatMaterialsController } from './chat-materials';
+import { LibraryRepository } from '../storage/library-repository';
 
 /** 素材不挂接故事版本或聊天进度；只使用捕获的账号、角色身份。 */
 export class MaterialsController {
   constructor(
     private app: GuideController,
     private snapshot: ContextSnapshot,
+    private libraries = new LibraryRepository(),
   ) {}
   guard() {
     this.app.guard(this.snapshot);
@@ -49,6 +57,52 @@ export class MaterialsController {
     if (!cards.some((card) => card.id === id)) throw new Error('素材已不存在，请重新打开');
     await this.app.repository.setMaterialFavorite(this.snapshot.user, this.snapshot.characterKey, id, value);
     this.guard();
+  }
+  async update(card: Material, expected?: Material, stillOpen: () => void = () => {}) {
+    this.guard();
+    const valid = materialSchema.parse(card);
+    await this.app.repository.updateMaterial(
+      this.snapshot.user,
+      this.snapshot.characterKey,
+      valid,
+      () => {
+        this.guard();
+        stillOpen();
+      },
+      undefined,
+      expected,
+    );
+    this.guard();
+  }
+  async links() {
+    this.guard();
+    const lib = await this.libraries.load(this.snapshot.user, this.snapshot.characterKey);
+    this.guard();
+    return lib;
+  }
+  async setLinks(card: Material, events: string[], routes: string[], stillOpen: () => void = () => {}) {
+    stillOpen();
+    const lib = await this.links();
+    if (
+      events.some((id) => !lib?.events.some((event) => event.id === id)) ||
+      routes.some((id) => !lib?.routes.some((route) => route.id === id))
+    )
+      throw new Error('关联事件或路线不存在，请重新选择');
+    await this.update(
+      { ...card, relatedEventIds: [...new Set(events)], relatedRouteIds: [...new Set(routes)] },
+      card,
+      stillOpen,
+    );
+  }
+  async history(id: string) {
+    this.guard();
+    const rows = await this.app.repository.loadMaterialHistory(
+      this.snapshot.user,
+      this.snapshot.characterKey,
+      id,
+    );
+    this.guard();
+    return rows;
   }
   async remove(id: string) {
     this.guard();

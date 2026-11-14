@@ -67,6 +67,7 @@ test('对话选区预览保存、来源纯文本、个人备份与跨聊天关�
     (window as unknown as { testSwitch: () => void }).testSwitch();
   });
   await expect(page.locator('.sg-header h2')).toHaveText('另一位成年角色的剧情指南');
+  await page.locator('.sg-phone-tools > summary').click();
   await page.getByRole('button', { name: '场景素材库', exact: true }).click();
   await expect(page.locator('.sg-material-card')).toHaveCount(16);
   await page.getByLabel('只看个人素材').check();

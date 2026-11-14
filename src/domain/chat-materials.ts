@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { materialContentSchema, materialSchema, type Material } from './materials';
+import { materialContentSchema, materialSchema, sceneContentSchema, type Material } from './materials';
 
 export interface ChatMessage {
   number: number;
@@ -87,10 +87,24 @@ export function planChatBatches(messages: ChatMessage[]): ChatMessage[][] {
 
 const resultSchema = z
   .object({
+    reason: z.string().max(500).optional(),
     materials: z
       .array(
         materialContentSchema
-          .extend({ messageNumber: z.number().int().positive(), quote: z.string().min(1).max(2000) })
+          .extend({
+            messageNumber: z.number().int().positive().optional(),
+            quote: z.string().min(1).max(2000).optional(),
+            scene: sceneContentSchema.optional(),
+            evidence: z
+              .array(
+                z
+                  .object({ messageNumber: z.number().int().positive(), quote: z.string().min(1).max(2000) })
+                  .strict(),
+              )
+              .min(1)
+              .max(30)
+              .optional(),
+          })
           .strict(),
       )
       .max(8),
@@ -101,6 +115,7 @@ export function decodeChatMaterials(
   raw: string,
   capture: ChatCapture,
   originals: ChatMessage[] = capture.messages,
+  reportReason: (reason: string) => void = () => {},
 ): Material[] {
   if (raw.length > 80000) throw new Error('模型返回超过80000字符，未采用');
   const text = raw.trim().replace(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i, '$1');
@@ -112,43 +127,60 @@ export function decodeChatMaterials(
   }
   const result = resultSchema.safeParse(value);
   if (!result.success)
-    throw new Error('模型素材结构无效，需包含materials数组、分类、描述、开场、消息序号和摘录（最多8条）');
+    throw new Error('模型素材结构无效，需包含materials数组、分类、描述和逐字证据（最多8条）');
+  if (result.data.reason) reportReason(result.data.reason);
   return result.data.materials.map((item) => {
-    const message = capture.messages.find(
-      (m) => m.number === item.messageNumber && m.text.includes(item.quote),
-    );
-    const relative = message?.text.indexOf(item.quote) ?? -1;
-    const original = originals.find((m) => m.number === item.messageNumber);
-    const start = relative + (message?.offset ?? 0);
-    if (
-      !message ||
-      !original ||
-      relative < 0 ||
-      !item.quote.trim() ||
-      original.text.slice(start, start + item.quote.length) !== item.quote
-    )
-      throw new Error(`素材「${item.title}」引用不在选中消息中，整批未保存`);
-    const { messageNumber, quote, ...content } = item;
+    const references =
+      item.evidence ??
+      (item.messageNumber && item.quote ? [{ messageNumber: item.messageNumber, quote: item.quote }] : []);
+    if (!references.length) throw new Error(`素材「${item.title}」缺少引用，整批未保存`);
+    const evidence = references.map((reference) => {
+      const message = capture.messages.find(
+        (m) => m.number === reference.messageNumber && m.text.includes(reference.quote),
+      );
+      const relative = message?.text.indexOf(reference.quote) ?? -1;
+      const original = originals.find((m) => m.number === reference.messageNumber);
+      const start = relative + (message?.offset ?? 0);
+      if (
+        !message ||
+        !original ||
+        relative < 0 ||
+        !reference.quote.trim() ||
+        original.text.slice(start, start + reference.quote.length) !== reference.quote
+      )
+        throw new Error(`素材「${item.title}」引用不在选中消息中，整批未保存`);
+      return {
+        label: `聊天摘录 / 第${reference.messageNumber}条 / ${message.role === 'user' ? '玩家' : '角色'}`,
+        text: original.text,
+        start,
+        end: start + reference.quote.length,
+        quote: reference.quote,
+        chat: {
+          chatKey: capture.chatKey,
+          messageNumber: reference.messageNumber,
+          role: message.role,
+          speaker: message.speaker,
+          transcript: capture.transcript,
+        },
+      };
+    });
+    const first = evidence[0]!;
+    const { quote, ...source } = first;
     return materialSchema.parse({
-      ...content,
+      title: item.title,
+      category: item.category,
+      tags: item.tags,
+      description: item.description,
+      opening: item.scene ? '' : item.opening,
       schemaVersion: 1,
       id: `personal:${crypto.randomUUID()}`,
       origin: 'dialogue',
       method: 'ai',
       quote,
-      source: {
-        label: `聊天摘录 / 第${messageNumber}条 / ${message.role === 'user' ? '玩家' : '角色'}`,
-        text: original.text,
-        start,
-        end: start + quote.length,
-        chat: {
-          chatKey: capture.chatKey,
-          messageNumber,
-          role: message.role,
-          speaker: message.speaker,
-          transcript: capture.transcript,
-        },
-      },
+      source,
+      ...(item.scene
+        ? { scene: { ...item.scene, summaryOrigin: 'ai_extracted', status: 'draft' }, evidence }
+        : {}),
     });
   });
 }

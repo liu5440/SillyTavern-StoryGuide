@@ -112,6 +112,70 @@ export class Repository {
     const schema = z.object({ schemaVersion: z.literal(1), id: materialIdSchema }).strict();
     return rows.map((row) => schema.parse(row).id);
   }
+  /** 人工编辑不能替换原文证据；旧内容与更新在同一事务保存，失败一起回滚。 */
+  async updateMaterial(
+    user: string,
+    character: string,
+    card: Material,
+    checkCurrent?: () => void,
+    signal?: AbortSignal,
+    expected?: Material,
+  ): Promise<void> {
+    const valid = materialSchema.parse(card);
+    if (valid.origin !== 'dialogue') throw new Error('不能覆盖内置素材');
+    const key = ['material', user, character, valid.id];
+    await this.transact(
+      'readwrite',
+      (store) => {
+        const read = store.get(key);
+        read.onsuccess = () => {
+          try {
+            checkCurrent?.();
+            const previous = materialSchema.parse(read.result);
+            if (expected && JSON.stringify(previous) !== JSON.stringify(materialSchema.parse(expected)))
+              throw new Error('素材已被其他窗口修改，请重新载入后编辑');
+            if (
+              previous.origin !== valid.origin ||
+              previous.method !== valid.method ||
+              previous.quote !== valid.quote ||
+              JSON.stringify(previous.source) !== JSON.stringify(valid.source) ||
+              JSON.stringify(previous.evidence) !== JSON.stringify(valid.evidence)
+            )
+              throw new Error('原文证据不能被编辑替换');
+            store.add(previous, [
+              'material-history',
+              user,
+              character,
+              valid.id,
+              `${Date.now()}-${crypto.randomUUID()}`,
+            ]);
+            const write = store.put(valid, key);
+            write.onsuccess = () => {
+              try {
+                checkCurrent?.();
+              } catch {
+                store.transaction.abort();
+              }
+            };
+          } catch {
+            store.transaction.abort();
+          }
+        };
+        return read;
+      },
+      '素材编辑保存失败：原文证据变化、条目不存在或存储不可用，原记录保持不变',
+      signal,
+    );
+  }
+  async loadMaterialHistory(user: string, character: string, id: string): Promise<Material[]> {
+    materialIdSchema.parse(id);
+    const range = IDBKeyRange.bound(
+      ['material-history', user, character, id],
+      ['material-history', user, character, id, []],
+    );
+    const rows: unknown[] = await this.transact('readonly', (store) => store.getAll(range));
+    return rows.map((row) => materialSchema.parse(row)).reverse();
+  }
   async saveChatArchive(user: string, archive: ChatArchive, check: () => void, signal?: AbortSignal) {
     const valid = chatArchiveSchema.parse(archive);
     const range = IDBKeyRange.bound(
