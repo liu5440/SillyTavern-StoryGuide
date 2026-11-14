@@ -898,7 +898,7 @@
 .sg-workspace { box-sizing: border-box; width: min(1500px, 98vw); height: 94dvh; max-width: 98vw; max-height: 96dvh; padding: 16px; color: #e7e8ed; background: #171e2b; border: 1px solid #65738c; border-radius: 16px; overflow: hidden; }
 .sg-workspace[open] { display: flex; flex-direction: column; gap: 10px; }
 .sg-workspace::backdrop { background: #07101b99; }
-.sg-workspace-header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex-shrink: 0; }
+.sg-workspace-header { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex-shrink: 0; }
 .sg-workspace-header h2 { margin: 0 auto 0 0; font-size: 20px; }
 .sg-workspace .sg-status { margin: 0; flex-shrink: 0; }
 .sg-workspace-columns { display: grid; grid-template-columns: minmax(190px, 23%) minmax(0, 1fr) minmax(240px, 28%); min-height: 0; flex: 1; gap: 12px; }
@@ -908,6 +908,7 @@
 .sg-workspace :is(input, textarea, select) { box-sizing: border-box; width: 100%; min-width: 0; color: inherit; background: #111b2b; padding: 10px; border: 1px solid #60718e; border-radius: 6px; }
 .sg-workspace textarea { min-height: 90px; resize: vertical; }
 .sg-workspace .sg-button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; min-height: 36px; }
+.sg-workspace .sg-workspace-header > .sg-button { min-height: 30px; padding: 4px 8px; font-size: 12px; line-height: 1.35; }
 .sg-workspace .sg-workspace-item { display: block; width: 100%; text-align: left; margin: 6px 0; }
 .sg-workspace .sg-check { overflow-wrap: anywhere; }
 .sg-workspace .sg-check input[type="checkbox"] { width: 16px; min-width: 16px; height: 16px; padding: 0; }
