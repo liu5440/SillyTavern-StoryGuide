@@ -935,3 +935,15 @@
  .sg-workspace { inset: 0 0 auto auto; }
  .sg-workspace-reading-mode { width:100vw; height:68dvh; max-height:68dvh; }
 }
+
+.sg-route-workshop { position: fixed; inset: 4vh 4vw; width: 92vw; max-width: 1200px; max-height: 92dvh; box-sizing: border-box; overflow: auto; background: #222936; color: #f0e8db; border: 1px solid #8d7857; border-radius: 12px; padding: 18px; z-index: 30001; }
+.sg-route-workshop header { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.sg-route-workshop .sg-route-workshop-form { display: grid; gap: 12px; }
+.sg-route-workshop fieldset { min-width: 0; display: flex; gap: 10px; flex-wrap: wrap; }
+.sg-route-workshop .sg-route-workshop-item { border: 1px solid #696156; margin: 12px 0; padding: 12px; overflow-wrap: anywhere; }
+.sg-route-workshop .sg-field { display: flex; flex-direction: column; margin: 8px 0; gap: 6px; }
+.sg-route-workshop input, .sg-route-workshop textarea, .sg-route-workshop select { max-width: 100%; min-width: 0; box-sizing: border-box; font: inherit; padding: 8px; }
+.sg-route-workshop .sg-button { white-space: normal; margin: 4px; min-height: 40px; }
+@media (max-width: 600px) { .sg-route-workshop { inset: 8px; width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 12px; } .sg-route-workshop header { align-items: flex-start; } .sg-route-workshop fieldset { flex-direction: column; } }
+.sg-route-workshop .sg-route-workshop-nodes { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 0; }
+.sg-route-workshop .sg-route-workshop-node { border: 1px solid #ad956e; border-radius: 8px; padding: 12px; max-width: 100%; overflow-wrap: anywhere; }

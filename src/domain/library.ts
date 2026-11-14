@@ -109,6 +109,16 @@ export const routeDraftSchema = z
     mode: z.enum(['infer', 'expand', 'mixed']),
     baseLibraryRevision: z.number().int().positive(),
     status: reviewStatusSchema,
+    referenceSourceIds: z.array(id).max(4000).optional(),
+    referenceEventIds: z.array(id).max(1000).optional(),
+    referenceEvents: z.array(storyEventSchema).max(1000).optional(),
+    targetCharacterMaterialIds: z.array(id).max(100).optional(),
+    sourceSnapshots: z.array(worldbookSourceSchema).max(4000).optional(),
+    style: text.optional(),
+    length: z.string().max(500).optional(),
+    baselineFingerprint: z.string().optional(),
+    itemReviews: z.record(reviewStatusSchema).optional(),
+    adoptedItemIds: z.array(id).max(4100).optional(),
     proposedEvents: z.array(storyEventSchema).max(1000),
     proposedEdges: z.array(storyEdgeSchema).max(3000),
     proposedRoutes: z.array(storyRouteSchema).max(100),
@@ -250,12 +260,38 @@ export function validateLibrary(lib: StoryLibrary): string[] {
   }
   // 草稿不进入正式图，但交换文件仍须校验证据和跨实体引用，避免未来采用非法内容。
   for (const draft of lib.drafts) {
+    // 新工坊草稿严格区分创作参考；旧v2草稿保留历史读取兼容。
+    if (draft.baselineFingerprint)
+      for (const item of [...draft.proposedEvents, ...draft.proposedEdges])
+        if (item.origin === 'ai_generated' && item.evidence.some((e) => e.role !== 'creative_reference'))
+          errors.push(`草稿${draft.id}：${item.id}AI创作引用必须标记创作参考`);
     const issues = validateLibrary({
       ...lib,
       drafts: [],
-      events: [...lib.events, ...draft.proposedEvents],
-      edges: [...lib.edges, ...draft.proposedEdges],
-      routes: [...lib.routes, ...draft.proposedRoutes],
+      sources: draft.sourceSnapshots
+        ? [
+            ...lib.sources.filter((x) => !draft.sourceSnapshots?.some((s) => s.id === x.id)),
+            ...draft.sourceSnapshots,
+          ]
+        : lib.sources,
+      events: [
+        ...lib.events,
+        ...(draft.referenceEvents ?? []).filter((x) => !lib.events.some((e) => e.id === x.id)),
+        ...draft.proposedEvents.filter((x) => !draft.adoptedItemIds?.includes(x.id)),
+      ],
+      // 虚拟确认仅用于结构环路检查，不改变草稿审核状态。
+      edges: [
+        ...lib.edges,
+        ...draft.proposedEdges
+          .filter((x) => !draft.adoptedItemIds?.includes(x.id))
+          .map((x) => ({ ...x, status: 'confirmed' as const })),
+      ],
+      routes: [
+        ...lib.routes,
+        ...draft.proposedRoutes
+          .filter((x) => !draft.adoptedItemIds?.includes(x.id))
+          .map((x) => ({ ...x, completeness: 'fragment' as const })),
+      ],
     });
     errors.push(...issues.map((issue) => `草稿${draft.id}：${issue}`));
   }

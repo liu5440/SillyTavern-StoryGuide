@@ -191,7 +191,9 @@ export class GuidePanel {
   destroy() {
     this.abort?.abort();
     this.closeEditors();
-    document.querySelectorAll<HTMLDialogElement>('.sg-workspace').forEach((dialog) => dialog.close());
+    document
+      .querySelectorAll<HTMLDialogElement>('.sg-route-workshop, .sg-workspace')
+      .forEach((dialog) => dialog.close());
     this.unsubscribe();
     this.dialog.remove();
     this.bubble.remove();

@@ -112,6 +112,58 @@ export class Repository {
     const schema = z.object({ schemaVersion: z.literal(1), id: materialIdSchema }).strict();
     return rows.map((row) => schema.parse(row).id);
   }
+  /** 拆分、合并及备份另存只追加新条目；源素材CAS、配额和收藏与新增在同一事务完成。 */
+  async saveMaterialCopies(
+    user: string,
+    character: string,
+    cards: Material[],
+    expected: Material[],
+    favorites: string[],
+    guard: () => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const valid = z.array(materialSchema).min(1).max(200).parse(cards);
+    const originals = z.array(materialSchema).max(200).parse(expected);
+    const ids = new Set(valid.map((card) => card.id));
+    if (ids.size !== valid.length || valid.some((card) => card.origin !== 'dialogue'))
+      throw new Error('新增素材ID重复或包含内置内容，未保存');
+    if (favorites.some((id) => !ids.has(id))) throw new Error('收藏只能引用本次新增素材');
+    const range = IDBKeyRange.bound(['material', user, character], ['material', user, character, []]);
+    await this.transact(
+      'readwrite',
+      (store) => {
+        const read = store.getAll(range);
+        read.onsuccess = () => {
+          try {
+            guard();
+            const current = (read.result as unknown[]).map((row) => materialSchema.parse(row));
+            const previous = new Map(current.map((card) => [card.id, card]));
+            if (current.length + valid.length > 200) throw new Error('个人素材超过200条');
+            if (valid.some((card) => previous.has(card.id))) throw new Error('新增素材ID已存在');
+            if (originals.some((card) => JSON.stringify(previous.get(card.id)) !== JSON.stringify(card)))
+              throw new Error('源素材已变化，请重新预览');
+            const check = () => {
+              try {
+                guard();
+              } catch {
+                store.transaction.abort();
+              }
+            };
+            for (const card of valid)
+              store.add(card, ['material', user, character, card.id]).onsuccess = check;
+            for (const id of new Set(favorites))
+              store.add({ schemaVersion: 1, id }, ['material-favorite', user, character, id]).onsuccess =
+                check;
+          } catch {
+            store.transaction.abort();
+          }
+        };
+        return read;
+      },
+      '素材另存失败：源素材已变化、条目冲突、超过200条或存储不可用；原记录保持不变',
+      signal,
+    );
+  }
   /** 人工编辑不能替换原文证据；旧内容与更新在同一事务保存，失败一起回滚。 */
   async updateMaterial(
     user: string,
@@ -139,7 +191,8 @@ export class Repository {
               previous.method !== valid.method ||
               previous.quote !== valid.quote ||
               JSON.stringify(previous.source) !== JSON.stringify(valid.source) ||
-              JSON.stringify(previous.evidence) !== JSON.stringify(valid.evidence)
+              JSON.stringify(previous.evidence) !== JSON.stringify(valid.evidence) ||
+              JSON.stringify(previous.derivedFromIds) !== JSON.stringify(valid.derivedFromIds)
             )
               throw new Error('原文证据不能被编辑替换');
             store.add(previous, [

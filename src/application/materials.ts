@@ -9,6 +9,7 @@ import {
 } from '../domain/materials';
 import { ChatMaterialsController } from './chat-materials';
 import { LibraryRepository } from '../storage/library-repository';
+import { deriveScenes, previewMaterialBackup, type SceneEdit } from '../domain/scene-operations';
 
 /** 素材不挂接故事版本或聊天进度；只使用捕获的账号、角色身份。 */
 export class MaterialsController {
@@ -114,9 +115,45 @@ export class MaterialsController {
     return {
       format: 'story-guide-materials',
       schemaVersion: 1,
+      user: this.snapshot.user,
       characterKey: this.snapshot.characterKey,
       materials: cards.filter((card) => card.origin === 'dialogue'),
       favorites,
     };
+  }
+  async derive(sources: Material[], edits: SceneEdit[], stillOpen: () => void) {
+    this.guard();
+    const cards = deriveScenes(sources, edits);
+    await this.app.repository.saveMaterialCopies(
+      this.snapshot.user,
+      this.snapshot.characterKey,
+      cards,
+      sources,
+      [],
+      () => {
+        this.guard();
+        stillOpen();
+      },
+    );
+    this.guard();
+  }
+  async previewBackup(text: string) {
+    const { cards } = await this.load();
+    return previewMaterialBackup(text, this.snapshot.user, this.snapshot.characterKey, cards);
+  }
+  async importBackup(preview: ReturnType<typeof previewMaterialBackup>, stillOpen: () => void) {
+    this.guard();
+    await this.app.repository.saveMaterialCopies(
+      this.snapshot.user,
+      this.snapshot.characterKey,
+      preview.cards,
+      [],
+      preview.favorites,
+      () => {
+        this.guard();
+        stillOpen();
+      },
+    );
+    this.guard();
   }
 }

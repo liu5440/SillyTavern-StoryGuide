@@ -12,6 +12,7 @@ import { el, button, check, field, showModal, download } from './dom';
 import { openChatMaterials } from './chat-materials';
 import { openChatArchives } from './chat-archives';
 import { sceneFields } from './scene-fields';
+import { openSceneOperation, openSceneMerge, openMaterialImport } from './scene-operations';
 
 /** 仅展示与收集用户选区；不读取聊天 DOM、不请求模型、不向聊天写入内容。 */
 export function openMaterials(app: MaterialsController) {
@@ -84,6 +85,12 @@ export function openMaterials(app: MaterialsController) {
           el('pre', 'sg-material-source', card.scene ? sceneText(card) : card.opening),
         );
         const actions = el('div', 'sg-toolbar');
+        if (card.derivedFromIds?.length)
+          article.append(
+            el('small', 'sg-muted', `派生来源（原记录保留）：${card.derivedFromIds.join('、')}`),
+          );
+        if (card.origin === 'dialogue' && card.scene)
+          actions.append(button('拆分场景', () => openSceneOperation(app, [card], true, reload)));
         actions.append(
           button('复制素材', () =>
             safe(async () => {
@@ -298,6 +305,8 @@ export function openMaterials(app: MaterialsController) {
     controls.append(search.root, category, onlyFavorites.root, onlyPersonal.root);
     const tools = el('div', 'sg-toolbar');
     tools.append(
+      button('合并关键场景', () => openSceneMerge(app, cards, reload)),
+      button('导入素材备份', () => openMaterialImport(app, reload)),
       button('聊天剧情归档', () => openChatArchives(app)),
       button('从当前聊天整理', () =>
         openChatMaterials(app, async () => {

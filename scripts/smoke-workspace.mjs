@@ -31,7 +31,12 @@ try {
       node.parentElement.open = true;
     });
     await settings.locator('button').evaluate((node) => node.click());
-    await expect(page.locator('.sg-panel > header h2')).toContainText('剧情指南测试角色的剧情指南');
+    try {
+      await expect(page.locator('.sg-panel > header h2')).toContainText('剧情指南测试角色的剧情指南');
+    } catch (error) {
+      console.error(await page.locator('.sg-panel').innerText());
+      throw error;
+    }
     await page.locator('.sg-phone-tools > summary').click();
     await page.getByRole('button', { name: '打开剧情工作台', exact: true }).click();
     return page.locator('.sg-workspace');
@@ -50,6 +55,18 @@ try {
   await workspace.getByLabel('目标事件').selectOption({ label: 'P0宿主选择' });
   await workspace.getByRole('textbox', { name: '触发条件', exact: true }).fill('玩家手动选择继续调查');
   await workspace.getByRole('button', { name: '应用连接', exact: true }).click();
+  if (process.env.P1_SMOKE === '1') {
+    await workspace.getByRole('button', { name: '管理当前路线', exact: true }).click();
+    await workspace.getByLabel('路线名称', { exact: true }).fill('宿主个人路线');
+    await workspace.getByLabel('路线类型').selectOption('character');
+    await workspace.getByLabel('路线人物（逗号分隔）').fill('测试人物');
+    await workspace.getByRole('button', { name: '应用路线设置', exact: true }).click();
+    await workspace.getByRole('button', { name: 'AI 剧情工坊', exact: true }).click();
+    const workshop = page.locator('.sg-route-workshop');
+    await expect(workshop.getByLabel('生成模式').locator('option')).toHaveCount(3);
+    await expect(workshop.getByRole('button', { name: '生成路线草稿', exact: true })).toBeVisible();
+    await workshop.getByRole('button', { name: '返回正式路线', exact: true }).click();
+  }
   await workspace.getByRole('button', { name: '保存工作台', exact: true }).click();
   await expect(workspace.locator('.sg-status')).toHaveText('已保存到当前浏览器');
   await mkdir('.local', { recursive: true });
@@ -60,6 +77,7 @@ try {
   const reading = await openWorkspace();
   await expect(reading).toHaveClass(/sg-workspace-reading-mode/);
   await expect(reading).toContainText('玩家手动选择继续调查');
+  if (process.env.P1_SMOKE === '1') await expect(reading).toContainText('人物个人线 · 测试人物');
   for (const width of [360, 390, 430]) {
     await page.setViewportSize({ width, height: 844 });
     await reading.getByRole('button', { name: '路线', exact: true }).click();
@@ -98,7 +116,10 @@ try {
   console.log(
     JSON.stringify({
       host: 'SillyTavern 1.19.0',
-      result: 'manual-route-save-reload-mobile passed',
+      result:
+        process.env.P1_SMOKE === '1'
+          ? 'route-metadata-workshop-entry-save-reload-mobile passed'
+          : 'manual-route-save-reload-mobile passed',
       pageErrors: errors,
       modelCalls: 0,
     }),

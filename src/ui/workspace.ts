@@ -10,9 +10,11 @@ import {
   type StoryMaterial,
 } from '../domain/library';
 import * as actions from '../application/library';
+import { updateRoute, deleteRoute, duplicateRoute } from '../application/routes';
 import { LibraryRepository } from '../storage/library-repository';
 import { el, button, field, download } from './dom';
 import { graph } from './graph';
+import { openRouteWorkshop } from './route-workshop';
 
 const origins = {
   worldbook_explicit: '原作明确',
@@ -141,6 +143,17 @@ class Workspace {
     const header = el('header', 'sg-workspace-header');
     header.append(
       el('h2', '', '剧情工作台'),
+      button('AI 剧情工坊', () =>
+        this.safe(() => {
+          if (!this.discardForm()) return;
+          openRouteWorkshop(
+            this.app,
+            this.snapshot,
+            () => this.library,
+            (next) => this.change(next),
+          );
+        }),
+      ),
       button('保存工作台', () => this.safe(() => this.save()), 'sg-primary'),
       button('导出 JSON', () => download('剧情资料库.json', this.library)),
       button('导入 JSON', () => this.importFile()),
@@ -215,6 +228,7 @@ class Workspace {
     this.dialog.addEventListener(
       'close',
       () => {
+        document.querySelector<HTMLDialogElement>('.sg-route-workshop')?.close();
         this.unsubscribe();
         window.removeEventListener('beforeunload', this.beforeUnload);
         this.bubble.remove();
@@ -383,12 +397,17 @@ class Workspace {
       this.routeId,
     );
     choose.input.addEventListener('change', () => {
+      if (!this.discardForm()) {
+        choose.input.value = this.routeId;
+        return;
+      }
       this.routeId = choose.input.value;
       this.renderRoute();
     });
     this.center.append(
       choose.root,
       button('新建路线', () => {
+        if (!this.discardForm()) return;
         const title = prompt('路线名称');
         if (title)
           this.safe(() => {
@@ -396,6 +415,12 @@ class Workspace {
             this.routeId = next.routes.at(-1)?.id ?? '';
             this.change(next);
           });
+      }),
+      button('管理当前路线', () => {
+        if (!this.discardForm()) return;
+        this.tab = 'detail';
+        this.routeForm();
+        this.applyTab();
       }),
       button(this.preview ? '返回编辑草稿' : '正式阅读（仅已确认）', () => {
         this.preview = !this.preview;
@@ -410,6 +435,14 @@ class Workspace {
     );
     const route = this.library.routes.find((x) => x.id === this.routeId);
     if (!route) return;
+    const routeKinds = { common: '公共路线', character: '人物个人线', custom: '自定义路线' };
+    this.center.append(
+      el(
+        'p',
+        'sg-muted',
+        `${routeKinds[route.kind]}${route.characters.length ? ` · ${route.characters.join('、')}` : ''} · ${route.completeness === 'playable' ? '完整路线' : '路线片段'}`,
+      ),
+    );
     const projection = this.preview
       ? formalRoute(this.library, route.id)
       : {
@@ -754,6 +787,85 @@ class Workspace {
         }),
       );
     }
+  }
+  private routeForm() {
+    const route = this.library.routes.find((item) => item.id === this.routeId);
+    if (!route) {
+      this.right.replaceChildren(el('p', '', '请先新建路线'));
+      return;
+    }
+    this.right.replaceChildren(el('h3', '', '路线设置'));
+    const title = field('路线名称', route.title);
+    const kind = select(
+      '路线类型',
+      [
+        ['common', '公共路线'],
+        ['character', '人物个人线'],
+        ['custom', '自定义路线'],
+      ],
+      route.kind,
+    );
+    const characters = field('路线人物（逗号分隔）', route.characters.join('，'));
+    const completeness = select(
+      '路线完整度',
+      [
+        ['fragment', '路线片段（允许未连接事件）'],
+        ['playable', '完整可游玩路线（检查入口与结局）'],
+      ],
+      route.completeness,
+    );
+    this.right.append(
+      title.root,
+      kind.root,
+      characters.root,
+      completeness.root,
+      el(
+        'p',
+        'sg-muted',
+        `${route.eventIds.length}个共享事件、${route.edgeIds.length}条关系。删除路线不删除事件；复制路线共享事件与连接，布局独立。`,
+      ),
+      button(
+        '应用路线设置',
+        () =>
+          this.safe(() => {
+            this.change(
+              updateRoute(this.library, route.id, {
+                title: title.input.value,
+                kind: kind.input.value as typeof route.kind,
+                characters: characters.input.value
+                  .split(/[,，]/)
+                  .map((value) => value.trim())
+                  .filter(Boolean),
+                completeness: completeness.input.value as typeof route.completeness,
+              }),
+              true,
+            );
+          }),
+        'sg-primary',
+      ),
+      button('复制为新路线', () =>
+        this.safe(() => {
+          if (!this.discardForm()) return;
+          const next = duplicateRoute(this.library, route.id, `${route.title}（副本）`.slice(0, 160));
+          this.routeId = next.routes.at(-1)?.id ?? '';
+          this.selected = undefined;
+          this.change(next);
+        }),
+      ),
+      button('删除当前路线', () =>
+        this.safe(() => {
+          if (
+            !this.discardForm() ||
+            !confirm(`删除路线「${route.title}」？共享事件和连接仍保留，已保存版本可恢复。`)
+          )
+            return;
+          const next = deleteRoute(this.library, route.id);
+          this.routeId = next.routes[0]?.id ?? '';
+          this.selected = undefined;
+          this.change(next);
+        }),
+      ),
+    );
   }
   private reimport() {
     void this.safe(async () => {

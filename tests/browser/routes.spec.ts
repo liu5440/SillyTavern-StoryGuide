@@ -1,0 +1,33 @@
+import { test, expect } from '@playwright/test';
+import { openGuide } from './helpers';
+
+test('人物路线改名复制删除不丢共享事件，手机刷新恢复路线信息', async ({ page }) => {
+  page.on('dialog', (dialog) => void dialog.accept());
+  await page.goto('/');
+  await openGuide(page);
+  await page.getByRole('button', { name: '打开剧情工作台', exact: true }).click();
+  const workspace = page.locator('.sg-workspace');
+  await workspace.getByRole('button', { name: '新建事件', exact: true }).click();
+  await workspace.getByLabel('事件名称', { exact: true }).fill('共享会面');
+  await workspace.getByRole('button', { name: '应用事件', exact: true }).click();
+  await workspace.getByRole('button', { name: '管理当前路线', exact: true }).click();
+  await workspace.getByLabel('路线名称', { exact: true }).fill('艾琳个人线');
+  await workspace.getByLabel('路线类型').selectOption('character');
+  await workspace.getByLabel('路线人物（逗号分隔）').fill('艾琳');
+  await workspace.getByRole('button', { name: '应用路线设置', exact: true }).click();
+  await workspace.getByRole('button', { name: '管理当前路线', exact: true }).click();
+  await workspace.getByRole('button', { name: '复制为新路线', exact: true }).click();
+  await expect(workspace.getByLabel('当前路线').locator('option')).toHaveCount(2);
+  await workspace.getByRole('button', { name: '管理当前路线', exact: true }).click();
+  await workspace.getByRole('button', { name: '删除当前路线', exact: true }).click();
+  await expect(workspace.getByLabel('当前路线').locator('option')).toHaveCount(1);
+  await expect(workspace.locator('.sg-workspace-event')).toHaveCount(1);
+  await workspace.getByRole('button', { name: '保存工作台', exact: true }).click();
+  await expect(workspace.locator('.sg-status')).toHaveText('已保存到当前浏览器');
+  await page.reload();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openGuide(page);
+  await page.getByRole('button', { name: '打开剧情工作台', exact: true }).click();
+  await expect(page.locator('.sg-workspace')).toContainText('人物个人线 · 艾琳');
+  await expect(page.locator('.sg-workspace .sg-workspace-reading')).toContainText('共享会面');
+});

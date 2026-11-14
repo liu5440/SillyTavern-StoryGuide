@@ -68,6 +68,7 @@ export const materialSchema = z
     evidence: z.array(evidenceSchema).min(1).max(30).optional(),
     relatedEventIds: z.array(z.string().min(1).max(180)).max(1000).optional(),
     relatedRouteIds: z.array(z.string().min(1).max(180)).max(100).optional(),
+    derivedFromIds: z.array(materialIdSchema).min(1).max(200).optional(),
   })
   .strict()
   .superRefine((card, ctx) => {
