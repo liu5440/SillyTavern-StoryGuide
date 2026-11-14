@@ -67,6 +67,12 @@ try {
     await expect(workshop.getByRole('button', { name: '生成路线草稿', exact: true })).toBeVisible();
     await workshop.getByRole('button', { name: '返回正式路线', exact: true }).click();
   }
+  if (process.env.TRIAGE_SMOKE === '1') {
+    await workspace.getByRole('button', { name: '全选当前结果', exact: true }).click();
+    await workspace.getByLabel('批量资料分类').selectOption('world');
+    await workspace.getByRole('button', { name: '应用批量分类', exact: true }).click();
+    await expect(workspace.locator('.sg-status')).toContainText('已分类');
+  }
   await workspace.getByRole('button', { name: '保存工作台', exact: true }).click();
   await expect(workspace.locator('.sg-status')).toHaveText('已保存到当前浏览器');
   await mkdir('.local', { recursive: true });
@@ -77,6 +83,13 @@ try {
   const reading = await openWorkspace();
   await expect(reading).toHaveClass(/sg-workspace-reading-mode/);
   await expect(reading).toContainText('玩家手动选择继续调查');
+  if (process.env.TRIAGE_SMOKE === '1') {
+    const world = reading
+      .locator('.sg-workspace-library > details')
+      .filter({ has: page.locator('summary', { hasText: /^世界背景/ }) });
+    if (!(await world.locator('.sg-material-group').count())) throw new Error('批量分类刷新未恢复');
+  }
+
   if (process.env.P1_SMOKE === '1') await expect(reading).toContainText('人物个人线 · 测试人物');
   for (const width of [360, 390, 430]) {
     await page.setViewportSize({ width, height: 844 });
@@ -122,6 +135,7 @@ try {
           : 'manual-route-save-reload-mobile passed',
       pageErrors: errors,
       modelCalls: 0,
+      materialClassification: process.env.TRIAGE_SMOKE === '1' ? 'save-reload passed' : 'not tested',
     }),
   );
 } finally {

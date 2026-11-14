@@ -11,8 +11,10 @@ import {
 } from '../domain/library';
 import * as actions from '../application/library';
 import { updateRoute, deleteRoute, duplicateRoute } from '../application/routes';
+import { classifyMaterials } from '../application/material-classification';
+import { groupMaterials } from '../domain/material-groups';
 import { LibraryRepository } from '../storage/library-repository';
-import { el, button, field, download } from './dom';
+import { el, button, check, field, download } from './dom';
 import { graph } from './graph';
 import { openRouteWorkshop } from './route-workshop';
 
@@ -108,6 +110,8 @@ class Workspace {
   private routeId = '';
   private tab = 'route';
   private query = '';
+  private materialSelection = new Set<string>();
+  private materialCategory = 'unclassified';
   private preview = false;
   private selected?: { type: 'event' | 'edge' | 'material'; id: string };
   private unsubscribe = () => {};
@@ -333,6 +337,7 @@ class Workspace {
     const search = field('搜索资料和事件', this.query);
     search.input.addEventListener('input', () => {
       this.query = search.input.value;
+      this.materialSelection.clear();
       this.renderLibrary();
       const input = this.left.querySelector<HTMLInputElement>('input');
       input?.focus();
@@ -348,16 +353,82 @@ class Workspace {
         this.applyTab();
       }),
     );
+    const groups = groupMaterials(this.library).filter((group) =>
+      group.members.some((material) => `${material.title} ${material.summary}`.includes(this.query)),
+    );
+    const visibleIds = groups.flatMap((group) => group.members.map((material) => material.id));
+    const selectionCount = el('p', 'sg-muted');
+    const refreshCount = () => {
+      selectionCount.textContent = `已选择 ${this.materialSelection.size} 条原始资料；同文组包含全部出处`;
+    };
+    refreshCount();
+    const categoryPicker = select('批量资料分类', Object.entries(categories), this.materialCategory);
+    categoryPicker.input.addEventListener('change', () => {
+      this.materialCategory = categoryPicker.input.value;
+    });
+    this.left.append(
+      el('p', 'sg-material-group-count', `${visibleIds.length} 条原始资料，显示为 ${groups.length} 组`),
+      selectionCount,
+      button('全选当前结果', () => {
+        visibleIds.forEach((id) => this.materialSelection.add(id));
+        this.renderLibrary();
+      }),
+      button('取消资料选择', () => {
+        this.materialSelection.clear();
+        this.renderLibrary();
+      }),
+      categoryPicker.root,
+      button('应用批量分类', () =>
+        this.safe(() => {
+          if (!this.discardForm()) return;
+          const count = this.materialSelection.size;
+          const next = classifyMaterials(
+            this.library,
+            [...this.materialSelection],
+            categoryPicker.input.value,
+          );
+          this.materialSelection.clear();
+          this.change(next);
+          this.status.textContent = `已分类 ${count} 条资料；请保存工作台`;
+        }),
+      ),
+    );
     for (const [category, label] of Object.entries(categories)) {
+      const matching = groups.filter((group) =>
+        group.material.categories.includes(category as keyof typeof categories),
+      );
       const group = el('details');
       group.open = true;
       group.append(el('summary', '', label));
-      for (const material of this.library.materials.filter(
-        (x) =>
-          x.categories.includes(category as keyof typeof categories) &&
-          `${x.title} ${x.summary}`.includes(this.query),
-      ))
-        group.append(button(material.title, () => this.pick('material', material.id), 'sg-workspace-item'));
+      for (const row of matching) {
+        const material = row.material;
+        const item = el('div', 'sg-material-group');
+        const mark = check(
+          `选择资料：${material.title}`,
+          row.members.every((m) => this.materialSelection.has(m.id)),
+          (checked) => {
+            for (const member of row.members) {
+              if (checked) this.materialSelection.add(member.id);
+              else this.materialSelection.delete(member.id);
+            }
+            refreshCount();
+          },
+        );
+        const title =
+          row.members.length > 1 ? `${material.title} · 同文 ${row.members.length} 处` : material.title;
+        item.append(
+          mark.root,
+          button(title, () => this.pick('material', material.id), 'sg-workspace-item'),
+        );
+        if (row.members.length > 1) {
+          const sources = el('details');
+          sources.append(el('summary', '', `全部出处（${row.members.length}）`));
+          for (const member of row.members)
+            sources.append(button(member.title, () => this.pick('material', member.id), 'sg-workspace-item'));
+          item.append(sources);
+        }
+        group.append(item);
+      }
       this.left.append(group);
     }
     this.left.append(el('h3', '', '剧情事件池'));

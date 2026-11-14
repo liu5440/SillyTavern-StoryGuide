@@ -5612,7 +5612,7 @@ var DraftGraphError = class extends Error {
   fields;
   constructor(errors) {
     super(errors.join("\uFF1B"));
-    const categories2 = [
+    const categories3 = [
       ["\u7F3A\u5C11\u539F\u6587\u6765\u6E90", "refs: missing_source"],
       ["\u6765\u6E90\u4E0D\u5B58\u5728", "refs.sourceId: unknown_source"],
       ["\u6458\u5F55\u4E0D\u5728\u539F\u6587\u4E2D", "refs.quote: invalid_quote"],
@@ -5626,7 +5626,7 @@ var DraftGraphError = class extends Error {
       ["\u6CA1\u6709\u51FA\u53E3", "nodes: dead_end"],
       ["\u7ED3\u5C40\u4E0D\u80FD\u6709\u540E\u7EED\u8FDE\u7EBF", "edges: ending_successor"]
     ];
-    this.fields = categories2.filter(([text3]) => errors.some((error) => error.includes(text3))).map(([, code]) => code);
+    this.fields = categories3.filter(([text3]) => errors.some((error) => error.includes(text3))).map(([, code]) => code);
   }
 };
 function validationReason(error) {
@@ -6848,6 +6848,58 @@ function duplicateRoute(lib, id3, title) {
   });
 }
 
+// src/application/material-classification.ts
+var categories = [
+  "character",
+  "location",
+  "world",
+  "plot",
+  "rule",
+  "unclassified"
+];
+function classifyMaterials(lib, ids, category) {
+  if (!ids.length) throw new Error("\u8BF7\u5148\u9009\u62E9\u8D44\u6599");
+  const validCategory = categories.find((value) => value === category);
+  if (!validCategory) throw new Error("\u5206\u7C7B\u65E0\u6548");
+  const selected = new Set(ids);
+  if ([...selected].some((id3) => !lib.materials.some((m) => m.id === id3)))
+    throw new Error("\u8D44\u6599\u4E0D\u5B58\u5728\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9");
+  return parseLibrary({
+    ...lib,
+    revision: lib.revision + 1,
+    materials: lib.materials.map(
+      (m) => selected.has(m.id) ? {
+        ...m,
+        revision: m.revision + 1,
+        categories: [validCategory],
+        userEdited: true
+      } : m
+    )
+  });
+}
+
+// src/domain/material-groups.ts
+function groupMaterials(lib) {
+  const sources = new Map(lib.sources.map((s) => [s.id, s]));
+  const groups = /* @__PURE__ */ new Map();
+  for (const material of lib.materials) {
+    const snapshot = material.sourceSnapshotIds.length === 1 ? sources.get(material.sourceSnapshotIds[0] ?? "") : void 0;
+    const foldable = snapshot?.text && material.origin === "worldbook_explicit" && material.title === (snapshot.label.slice(0, 160) || "\u672A\u547D\u540D\u8D44\u6599");
+    const key = foldable ? JSON.stringify([
+      snapshot.text,
+      snapshot.disabled,
+      [...material.categories].sort(),
+      material.summary,
+      material.status,
+      [...material.relatedEventIds].sort()
+    ]) : JSON.stringify(["independent", material.id]);
+    const prior = groups.get(key);
+    if (prior) prior.members.push(material);
+    else groups.set(key, { material, members: [material] });
+  }
+  return [...groups.values()];
+}
+
 // src/storage/library-repository.ts
 var LibraryRepository = class {
   constructor(name = "sillytavern-story-guide-v1") {
@@ -7510,7 +7562,7 @@ var origins = {
   ai_generated: "AI \u521B\u4F5C",
   user_manual: "\u4EBA\u5DE5\u7F16\u8F91"
 };
-var categories = {
+var categories2 = {
   character: "\u4EBA\u7269",
   location: "\u5730\u70B9",
   world: "\u4E16\u754C\u80CC\u666F",
@@ -7600,6 +7652,8 @@ var Workspace = class {
   routeId = "";
   tab = "route";
   query = "";
+  materialSelection = /* @__PURE__ */ new Set();
+  materialCategory = "unclassified";
   preview = false;
   selected;
   unsubscribe = () => {
@@ -7814,6 +7868,7 @@ var Workspace = class {
     const search = field("\u641C\u7D22\u8D44\u6599\u548C\u4E8B\u4EF6", this.query);
     search.input.addEventListener("input", () => {
       this.query = search.input.value;
+      this.materialSelection.clear();
       this.renderLibrary();
       const input = this.left.querySelector("input");
       input?.focus();
@@ -7829,14 +7884,82 @@ var Workspace = class {
         this.applyTab();
       })
     );
-    for (const [category, label] of Object.entries(categories)) {
+    const groups = groupMaterials(this.library).filter(
+      (group) => group.members.some((material) => `${material.title} ${material.summary}`.includes(this.query))
+    );
+    const visibleIds = groups.flatMap((group) => group.members.map((material) => material.id));
+    const selectionCount = el("p", "sg-muted");
+    const refreshCount = () => {
+      selectionCount.textContent = `\u5DF2\u9009\u62E9 ${this.materialSelection.size} \u6761\u539F\u59CB\u8D44\u6599\uFF1B\u540C\u6587\u7EC4\u5305\u542B\u5168\u90E8\u51FA\u5904`;
+    };
+    refreshCount();
+    const categoryPicker = select("\u6279\u91CF\u8D44\u6599\u5206\u7C7B", Object.entries(categories2), this.materialCategory);
+    categoryPicker.input.addEventListener("change", () => {
+      this.materialCategory = categoryPicker.input.value;
+    });
+    this.left.append(
+      el("p", "sg-material-group-count", `${visibleIds.length} \u6761\u539F\u59CB\u8D44\u6599\uFF0C\u663E\u793A\u4E3A ${groups.length} \u7EC4`),
+      selectionCount,
+      button("\u5168\u9009\u5F53\u524D\u7ED3\u679C", () => {
+        visibleIds.forEach((id3) => this.materialSelection.add(id3));
+        this.renderLibrary();
+      }),
+      button("\u53D6\u6D88\u8D44\u6599\u9009\u62E9", () => {
+        this.materialSelection.clear();
+        this.renderLibrary();
+      }),
+      categoryPicker.root,
+      button(
+        "\u5E94\u7528\u6279\u91CF\u5206\u7C7B",
+        () => this.safe(() => {
+          if (!this.discardForm()) return;
+          const count = this.materialSelection.size;
+          const next = classifyMaterials(
+            this.library,
+            [...this.materialSelection],
+            categoryPicker.input.value
+          );
+          this.materialSelection.clear();
+          this.change(next);
+          this.status.textContent = `\u5DF2\u5206\u7C7B ${count} \u6761\u8D44\u6599\uFF1B\u8BF7\u4FDD\u5B58\u5DE5\u4F5C\u53F0`;
+        })
+      )
+    );
+    for (const [category, label] of Object.entries(categories2)) {
+      const matching = groups.filter(
+        (group2) => group2.material.categories.includes(category)
+      );
       const group = el("details");
       group.open = true;
       group.append(el("summary", "", label));
-      for (const material of this.library.materials.filter(
-        (x) => x.categories.includes(category) && `${x.title} ${x.summary}`.includes(this.query)
-      ))
-        group.append(button(material.title, () => this.pick("material", material.id), "sg-workspace-item"));
+      for (const row of matching) {
+        const material = row.material;
+        const item = el("div", "sg-material-group");
+        const mark = check(
+          `\u9009\u62E9\u8D44\u6599\uFF1A${material.title}`,
+          row.members.every((m) => this.materialSelection.has(m.id)),
+          (checked) => {
+            for (const member of row.members) {
+              if (checked) this.materialSelection.add(member.id);
+              else this.materialSelection.delete(member.id);
+            }
+            refreshCount();
+          }
+        );
+        const title = row.members.length > 1 ? `${material.title} \xB7 \u540C\u6587 ${row.members.length} \u5904` : material.title;
+        item.append(
+          mark.root,
+          button(title, () => this.pick("material", material.id), "sg-workspace-item")
+        );
+        if (row.members.length > 1) {
+          const sources = el("details");
+          sources.append(el("summary", "", `\u5168\u90E8\u51FA\u5904\uFF08${row.members.length}\uFF09`));
+          for (const member of row.members)
+            sources.append(button(member.title, () => this.pick("material", member.id), "sg-workspace-item"));
+          item.append(sources);
+        }
+        group.append(item);
+      }
       this.left.append(group);
     }
     this.left.append(el("h3", "", "\u5267\u60C5\u4E8B\u4EF6\u6C60"));
@@ -8096,7 +8219,7 @@ var Workspace = class {
   materialDetail(material) {
     const title = field("\u8D44\u6599\u540D\u79F0", material.title);
     const summary = field("\u8D44\u6599\u5F52\u7EB3", material.summary, true);
-    const category = select("\u8D44\u6599\u5206\u7C7B", Object.entries(categories), material.categories[0]);
+    const category = select("\u8D44\u6599\u5206\u7C7B", Object.entries(categories2), material.categories[0]);
     this.right.append(
       title.root,
       summary.root,

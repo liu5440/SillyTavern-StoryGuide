@@ -909,6 +909,8 @@
 .sg-workspace textarea { min-height: 90px; resize: vertical; }
 .sg-workspace .sg-button { max-width: 100%; white-space: normal; overflow-wrap: anywhere; min-height: 36px; }
 .sg-workspace .sg-workspace-item { display: block; width: 100%; text-align: left; margin: 6px 0; }
+.sg-workspace .sg-check { overflow-wrap: anywhere; }
+.sg-workspace .sg-check input[type="checkbox"] { width: 16px; min-width: 16px; height: 16px; padding: 0; }
 .sg-workspace-event, .sg-workspace-reading { border: 1px solid #54617b; padding: 10px; border-radius: 8px; margin: 8px 0; overflow-wrap: anywhere; }
 .sg-workspace-event { display: flex; flex-direction: column; gap: 6px; }
 .sg-workspace p, .sg-workspace small { white-space: pre-wrap; overflow-wrap: anywhere; }
