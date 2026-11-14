@@ -7742,13 +7742,14 @@ var Workspace = class {
       ["library", "\u8D44\u6599"],
       ["route", "\u8DEF\u7EBF"],
       ["detail", "\u8BE6\u60C5"]
-    ])
-      nav.append(
-        button(label, () => {
-          this.tab = key;
-          this.applyTab();
-        })
-      );
+    ]) {
+      const tab = button(label, () => {
+        this.tab = key;
+        this.applyTab();
+      });
+      tab.dataset.workspaceTab = key;
+      nav.append(tab);
+    }
     this.columns.append(this.left, this.center, this.right);
     this.right.addEventListener("input", () => {
       this.formDirty = true;
@@ -7799,6 +7800,8 @@ var Workspace = class {
   }
   applyTab() {
     this.dialog.dataset.tab = this.tab;
+    for (const tab of this.dialog.querySelectorAll("[data-workspace-tab]"))
+      tab.setAttribute("aria-pressed", String(tab.dataset.workspaceTab === this.tab));
   }
   async safe(fn) {
     try {
@@ -10368,6 +10371,7 @@ var GuidePanel = class {
       heading,
       button("\u8D44\u6599\u8BBE\u7F6E", () => {
         this.dialog.classList.toggle("sg-show-settings");
+        this.updateReadingNavigation();
         this.renderContent();
         this.body.scrollTop = 0;
       }),
@@ -10446,6 +10450,7 @@ var GuidePanel = class {
     footer.append(
       button("\u9605\u8BFB", () => {
         this.dialog.classList.remove("sg-show-settings");
+        this.updateReadingNavigation();
         tools.open = false;
         this.renderContent();
         this.body.scrollTop = 0;
@@ -10453,10 +10458,13 @@ var GuidePanel = class {
     );
     if (settings) footer.append(settings);
     footer.append(tools);
+    for (const tab of footer.querySelectorAll(":scope > button"))
+      tab.dataset.readingMode = tab === settings ? "settings" : "reading";
     this.status.setAttribute("role", "status");
     this.status.setAttribute("aria-live", "polite");
     this.body.append(this.sidebar, this.content);
     this.dialog.append(header, this.status, this.body, footer);
+    this.updateReadingNavigation();
     this.dialog.addEventListener("cancel", (event) => {
       if (this.dirty && !confirm("\u8349\u7A3F\u5C1A\u672A\u4FDD\u5B58\uFF0C\u5173\u95ED\u540E\u66F4\u6539\u4E0D\u4F1A\u4FDD\u7559\u3002\u7EE7\u7EED\uFF1F")) event.preventDefault();
       else this.abort?.abort();
@@ -10525,6 +10533,11 @@ var GuidePanel = class {
   returnFocus;
   unsubscribe;
   bubble = button("\u5267\u60C5\u624B\u518C", () => this.restore(), "sg-guide-bubble");
+  updateReadingNavigation() {
+    const mode = this.dialog.classList.contains("sg-show-settings") ? "settings" : "reading";
+    for (const tab of this.dialog.querySelectorAll("[data-reading-mode]"))
+      tab.setAttribute("aria-pressed", String(tab.dataset.readingMode === mode));
+  }
   destroy() {
     this.abort?.abort();
     this.closeEditors();

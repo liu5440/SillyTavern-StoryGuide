@@ -949,3 +949,29 @@
 @media (max-width: 600px) { .sg-route-workshop { inset: 8px; width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 12px; } .sg-route-workshop header { align-items: flex-start; } .sg-route-workshop fieldset { flex-direction: column; } }
 .sg-route-workshop .sg-route-workshop-nodes { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 0; }
 .sg-route-workshop .sg-route-workshop-node { border: 1px solid #ad956e; border-radius: 8px; padding: 12px; max-width: 100%; overflow-wrap: anywhere; }
+
+/* 持续选中状态与悬停、键盘焦点分开；沿用手册的金色强调。 */
+.sg-panel .sg-button:is(.sg-active, [aria-pressed="true"]),
+.sg-workspace .sg-button[aria-pressed="true"] {
+  color: #19202b;
+  background: #f0cc82;
+  border: 1px solid #ffe5ae;
+  box-shadow: inset 0 -3px 0 #ac7732;
+  font-weight: 750;
+}
+.sg-panel .sg-button:is(.sg-active, [aria-pressed="true"])::before,
+.sg-workspace .sg-workspace-tabs .sg-button[aria-pressed="true"]::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 4px;
+  margin-right: 7px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  vertical-align: 3px;
+}
+.sg-workspace .sg-button:focus-visible {
+  outline: 2px solid #f5cf80;
+  outline-offset: 3px;
+}

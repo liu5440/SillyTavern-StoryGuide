@@ -208,13 +208,14 @@ class Workspace {
       ['library', '资料'],
       ['route', '路线'],
       ['detail', '详情'],
-    ] as const)
-      nav.append(
-        button(label, () => {
-          this.tab = key;
-          this.applyTab();
-        }),
-      );
+    ] as const) {
+      const tab = button(label, () => {
+        this.tab = key;
+        this.applyTab();
+      });
+      tab.dataset.workspaceTab = key;
+      nav.append(tab);
+    }
     this.columns.append(this.left, this.center, this.right);
     this.right.addEventListener('input', () => {
       this.formDirty = true;
@@ -268,6 +269,8 @@ class Workspace {
   }
   private applyTab() {
     this.dialog.dataset.tab = this.tab;
+    for (const tab of this.dialog.querySelectorAll<HTMLButtonElement>('[data-workspace-tab]'))
+      tab.setAttribute('aria-pressed', String(tab.dataset.workspaceTab === this.tab));
   }
   private async safe(fn: () => void | Promise<void>) {
     try {

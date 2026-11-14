@@ -59,6 +59,7 @@ export class GuidePanel {
       heading,
       button('资料设置', () => {
         this.dialog.classList.toggle('sg-show-settings');
+        this.updateReadingNavigation();
         this.renderContent();
         this.body.scrollTop = 0;
       }),
@@ -135,6 +136,7 @@ export class GuidePanel {
     footer.append(
       button('阅读', () => {
         this.dialog.classList.remove('sg-show-settings');
+        this.updateReadingNavigation();
         tools.open = false;
         this.renderContent();
         this.body.scrollTop = 0;
@@ -142,10 +144,13 @@ export class GuidePanel {
     );
     if (settings) footer.append(settings);
     footer.append(tools);
+    for (const tab of footer.querySelectorAll<HTMLButtonElement>(':scope > button'))
+      tab.dataset.readingMode = tab === settings ? 'settings' : 'reading';
     this.status.setAttribute('role', 'status');
     this.status.setAttribute('aria-live', 'polite');
     this.body.append(this.sidebar, this.content);
     this.dialog.append(header, this.status, this.body, footer);
+    this.updateReadingNavigation();
     this.dialog.addEventListener('cancel', (event) => {
       if (this.dirty && !confirm('草稿尚未保存，关闭后更改不会保留。继续？')) event.preventDefault();
       else this.abort?.abort();
@@ -187,6 +192,11 @@ export class GuidePanel {
         }
       },
     );
+  }
+  private updateReadingNavigation() {
+    const mode = this.dialog.classList.contains('sg-show-settings') ? 'settings' : 'reading';
+    for (const tab of this.dialog.querySelectorAll<HTMLButtonElement>('[data-reading-mode]'))
+      tab.setAttribute('aria-pressed', String(tab.dataset.readingMode === mode));
   }
   destroy() {
     this.abort?.abort();
