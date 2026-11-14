@@ -94,6 +94,60 @@ function setup(response: (prompt: string, signal: AbortSignal) => Promise<string
   };
 }
 
+test('100条原文不依赖模型分批即可归档，标题标签与完整正文保留', async () => {
+  const state = setup(async () => {
+    throw new Error('不应调用模型');
+  });
+  const rows = Array.from({ length: 100 }, (_, index) => ({
+    number: index + 1,
+    role: 'character' as const,
+    speaker: '艾琳',
+    text: `片段${index}。<script>只是文本</script>`,
+  }));
+  const raw = { ...capture, messages: rows };
+  const archive = state.app.archive(
+    raw,
+    rows.map((row) => row.number),
+    undefined,
+    [],
+    { title: '钟楼调查', tags: ['艾琳', '钟楼'] },
+  );
+  await state.app.saveArchive(archive);
+  const saved = (await state.repository.loadChatArchives('u', 'alice.png'))[0];
+  assert.equal(saved?.status, 'raw');
+  assert.equal(saved?.messages.length, 100);
+  assert.deepEqual(saved?.messages, rows);
+  assert.deepEqual(saved?.tags, ['艾琳', '钟楼']);
+  assert.equal(saved?.title, '钟楼调查');
+  await assert.rejects(
+    state.app.generate(
+      raw,
+      rows.map((row) => row.number),
+      new AbortController().signal,
+    ),
+    /1–50/,
+  );
+});
+
+test('整理结果只能原子升级同一raw快照，错误消息不能覆盖已保存原文', async () => {
+  const state = setup();
+  const raw = state.app.archive(capture, [3]);
+  await state.app.saveArchive(raw);
+  const wrong = {
+    ...raw,
+    status: 'complete' as const,
+    messages: [{ ...raw.messages[0]!, text: '不同原文' }],
+  };
+  await assert.rejects(state.app.saveArchive(wrong, undefined, true));
+  assert.equal((await state.repository.loadChatArchives('u', 'alice.png'))[0]?.status, 'raw');
+  const complete = { ...raw, status: 'complete' as const };
+  await state.app.saveArchive(complete, undefined, true);
+  const rows = await state.repository.loadChatArchives('u', 'alice.png');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.status, 'complete');
+  assert.deepEqual(rows[0]?.messages, raw.messages);
+});
+
 test('只发送勾选的消息，草稿不自动保存，确认后持久化', async () => {
   let prompt = '';
   const { app, repository } = setup(async (text) => {

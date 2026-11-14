@@ -1,7 +1,7 @@
 import type { MaterialsController } from '../application/materials';
 import type { ChatMaterialDraft } from '../application/chat-materials';
 import { planChatBatches, type ChatCapture } from '../domain/chat-materials';
-import { chatArchiveFileName } from '../domain/chat-archive';
+import { chatArchiveFileName, type ChatArchive } from '../domain/chat-archive';
 import { materialCategories, type Material } from '../domain/materials';
 import { el, button, check, field, showModal, download } from './dom';
 import { openDiagnostics } from './diagnostics';
@@ -25,6 +25,14 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
       }
     }
     const info = el('p', 'sg-muted');
+    const title = field('片段标题', '');
+    title.input.placeholder = '例如：雨夜重逢、钟楼调查';
+    const tags = field('片段标签', '');
+    tags.input.placeholder = '用逗号分隔，例如：艾琳，钟楼，重逢';
+    let savedRawKey = '';
+    let savedRaw: ChatArchive | undefined;
+    const archiveKey = (archive: ChatArchive) =>
+      JSON.stringify([archive.transcript, archive.messages, archive.title, archive.tags]);
     const scope = el('select');
     scope.setAttribute('aria-label', '整理消息来源');
     for (const [value, label] of [
@@ -61,6 +69,7 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
         .forEach((input) => {
           input.disabled = value;
         });
+      updateSummary();
     };
     const message = (text: string, error = false) => {
       status.textContent = text;
@@ -92,15 +101,15 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
       const { count, size } = selectedSize();
       const messages = capture?.messages.filter((m) => selected.has(m.number)) ?? [];
       const batches = count > 0 && count <= 50 ? planChatBatches(messages).length : 0;
-      summary.textContent = `选中${count}条 · ${size}字符。${batches ? `将自动分${batches}批，预计调用模型${batches}次；单批最多12000字符，不需要手动拆分。` : '请选择1–50条消息。'}将只把这些消息发给酒馆当前模型。`;
+      summary.textContent = `选中${count}条 · ${size}字符。原文可直接保存或导出，无需AI（最多100条）。${batches ? `可选AI整理自动分${batches}批，预计${batches}次请求，每批12000字符；原文会先保存。` : count > 50 ? 'AI整理每次最多50条；不影响原文归档。' : '请勾选消息。'}`;
       generate.disabled = busy || !batches;
       generate.title = busy
         ? '正在等待酒馆模型返回，可取消整理或查看排查日志'
         : !batches
           ? '请预览范围并勾选1–50条有效消息'
           : '将选中消息交给酒馆当前模型整理';
-      exportChat.disabled = busy || !batches;
-      saveArchive.disabled = busy || !batches;
+      exportChat.disabled = busy || !count || count > 100;
+      saveArchive.disabled = busy || !count || count > 100;
     };
     const preview = button('预览当前范围', () => {
       try {
@@ -158,6 +167,7 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
       '用当前模型整理',
       async () => {
         if (busy) return;
+        let rawReady = false;
         try {
           guard();
           if (!capture) throw new Error('请先预览当前范围');
@@ -167,6 +177,9 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
           generate.disabled = true;
           preview.disabled = true;
           abort = new AbortController();
+          await ensureRawSaved(abort.signal);
+          guard();
+          rawReady = true;
           const { count, size } = selectedSize();
           message(`正在使用酒馆当前${app.info().api}连接整理${count}条、${size}字符…（每批最多180秒）`);
           const next = await app.generate(capture, [...selected], abort.signal, (text) => message(text));
@@ -176,7 +189,7 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
             message(
               next.error
                 ? `部分完成：${next.completedBatches}/${next.totalBatches}批。${next.error}。可保存或导出原文归档。`
-                : '模型未发现适合的非露骨素材，未保存任何条目。可直接保存或导出原文归档。',
+                : '模型未生成AI素材；原文已保存到聊天剧情归档，可直接导出。',
               !!next.error,
             );
             return;
@@ -257,17 +270,20 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
             !!next.error,
           );
         } catch (error) {
-          message(error instanceof Error ? error.message : '整理失败，未保存素材', true);
+          message(
+            `${error instanceof Error ? error.message : 'AI整理失败'}${rawReady ? '。原文已先保存到聊天剧情归档，可直接导出或稍后处理。' : ''}`,
+            true,
+          );
         } finally {
           setBusy(false);
           updateSummary();
           preview.disabled = false;
         }
       },
-      'sg-primary',
+      '',
     );
     generate.disabled = true;
-    const getArchive = () => {
+    const getArchive = (includeAI = true) => {
       guard();
       if (!capture) throw new Error('请先预览并选择消息');
       const cards = draft
@@ -281,7 +297,41 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
               category: edit.category.value as Material['category'],
             }))
         : [];
-      return app.archive(capture, [...selected], draft, cards);
+      const labels = [
+        ...new Set(
+          tags.input.value
+            .split(/[,，、]/u)
+            .map((tag) => tag.trim())
+            .filter(Boolean),
+        ),
+      ];
+      if (labels.length > 12 || labels.some((tag) => tag.length > 30))
+        throw new Error('最多12个标签，每个不超过30字');
+      if (title.input.value.trim().length > 160) throw new Error('片段标题最多160字');
+      const archive = app.archive(
+        capture,
+        [...selected],
+        includeAI ? draft : undefined,
+        includeAI ? cards : [],
+        {
+          title: title.input.value.trim() || `第${[...selected][0] ?? 1}条起的故事片段`,
+          tags: labels,
+        },
+      );
+      return savedRaw && savedRawKey === archiveKey(archive)
+        ? { ...archive, id: savedRaw.id, createdAt: savedRaw.createdAt }
+        : archive;
+    };
+    const ensureRawSaved = async (signal?: AbortSignal) => {
+      const archive = getArchive(false);
+      const key = archiveKey(archive);
+      if (savedRawKey === key) return archive;
+      await app.saveArchive(archive, signal);
+      guard();
+      signal?.throwIfAborted();
+      savedRawKey = key;
+      savedRaw = archive;
+      return archive;
     };
     const exportChat = button('导出所选聊天JSON', () => {
       try {
@@ -302,7 +352,12 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
         preview.disabled = true;
         cancel.disabled = true;
         abort = new AbortController();
-        await app.saveArchive(archive, abort.signal);
+        if (draft) {
+          const upgrade = !!savedRaw && savedRawKey === archiveKey(archive);
+          await app.saveArchive(archive, abort.signal, upgrade);
+          savedRaw = undefined;
+          savedRawKey = '';
+        } else await ensureRawSaved(abort.signal);
         guard();
         message(
           `已保存${archive.messages.length}条消息的${archive.status === 'partial' ? '部分整理' : ''}归档，可在素材库“聊天剧情归档”中再次导出。`,
@@ -333,20 +388,27 @@ export function openChatMaterials(materials: MaterialsController, saved: () => P
     });
     range.append(start.root, end.root, preview);
     const actions = el('div', 'sg-toolbar');
-    actions.append(generate, cancel, saveArchive, exportChat, button('排查日志', openDiagnostics));
+    saveArchive.classList.add('sg-primary');
+    actions.append(saveArchive, exportChat);
+    const ai = el('details', 'sg-details');
+    ai.open = true;
+    ai.append(el('summary', '', '可选：用酒馆AI整理'), generate, cancel, button('排查日志', openDiagnostics));
     body.append(
       el(
         'p',
         'sg-muted',
-        '仅整理成年角色的非露骨日常与恋爱素材。先选择当前聊天消息，点击整理后会发送至酒馆当前模型；本扩展不主动附带其他聊天、世界书或角色卡；宿主及其他插件可能按各自设置处理提示。草稿采用前不改变故事或聊天。关闭、切换或修改聊天使旧结果失效。',
+        '先把选中的聊天当作故事片段保存：保留完整原文及角色、聊天、消息序号，不调用AI。JSON可交给其他工具继续整理。可选AI整理会发送所选内容至酒馆当前模型，仅归纳适合的非露骨素材；模型失败不影响已保存原文。不会改写或发送聊天。',
       ),
       info,
       scopeLabel,
       range,
+      title.root,
+      tags.root,
       sourceList,
       summary,
       actions,
       status,
+      ai,
       results,
     );
     // showModal在构建后挂载，等挂载完成再接入生命周期。

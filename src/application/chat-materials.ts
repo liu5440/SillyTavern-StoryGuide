@@ -147,10 +147,10 @@ export class ChatMaterialsController {
     numbers: number[],
     draft?: ChatMaterialDraft,
     cards: Material[] = draft?.cards ?? [],
+    metadata: Pick<ChatArchive, 'title' | 'tags'> = {},
   ): ChatArchive {
     this.guard(capture);
     const messages = capture.messages.filter((m) => numbers.includes(m.number));
-    planChatBatches(messages);
     if (messages.length !== new Set(numbers).size) throw new Error('所选消息无效');
     if (
       draft &&
@@ -176,6 +176,7 @@ export class ChatMaterialsController {
       chatKey: capture.chatKey,
       transcript: capture.transcript,
       createdAt: new Date().toISOString(),
+      ...metadata,
       status: draft ? (draft.error ? 'partial' : 'complete') : 'raw',
       completedBatches: draft?.completedBatches ?? 0,
       totalBatches: draft?.totalBatches ?? 0,
@@ -184,14 +185,15 @@ export class ChatMaterialsController {
       materials: cards,
     });
   }
-  async saveArchive(archive: ChatArchive, signal?: AbortSignal) {
+  async saveArchive(archive: ChatArchive, signal?: AbortSignal, finalizeRaw = false) {
     const check = () => {
       this.guard({ chatKey: archive.chatKey, transcript: archive.transcript, messages: archive.messages });
       if (archive.characterKey !== this.snapshot.characterKey || signal?.aborted)
         throw new Error('角色或归档已失效');
     };
     check();
-    await this.repository.saveChatArchive(this.snapshot.user, archive, check, signal);
+    if (finalizeRaw) await this.repository.finalizeChatArchive(this.snapshot.user, archive, check, signal);
+    else await this.repository.saveChatArchive(this.snapshot.user, archive, check, signal);
     check();
   }
 }

@@ -4499,7 +4499,7 @@ function diagnosticReport() {
   return {
     format: "story-guide-diagnostics",
     schemaVersion: 1,
-    version: "0.6.3",
+    version: "0.6.4",
     modelSource: "SillyTavern.getContext().generateRaw / \u9152\u9986\u53C2\u6570\u6784\u9020\u4E0ESSE\u89E3\u6790",
     retention: "\u5F53\u524D\u9875\u9762\u5185\u5B58\u6700\u8FD1100\u6761\uFF0C\u5237\u65B0\u6E05\u7A7A",
     entries: entries.map((entry) => ({ ...entry, fields: entry.fields?.slice() }))
@@ -4923,6 +4923,8 @@ var chatArchiveSchema = z.object({
   chatKey: z.string().min(1).max(1e3),
   transcript: z.string().min(1).max(100),
   createdAt: z.string().datetime(),
+  title: z.string().trim().min(1).max(160).optional(),
+  tags: z.array(z.string().trim().min(1).max(30)).max(12).optional(),
   status: z.enum(["raw", "complete", "partial"]),
   completedBatches: z.number().int().nonnegative(),
   totalBatches: z.number().int().nonnegative(),
@@ -4934,9 +4936,14 @@ var chatArchiveSchema = z.object({
       speaker: z.string().max(160),
       text: z.string().min(1).max(2e4)
     }).strict()
-  ).min(1).max(50),
+  ).min(1).max(100),
   materials: z.array(materialSchema).max(200)
-}).strict();
+}).strict().superRefine((archive, context) => {
+  if (archive.messages.reduce((size, message) => size + message.text.length, 0) > 1e6)
+    context.addIssue({ code: "custom", path: ["messages"], message: "\u539F\u6587\u5F52\u6863\u6700\u591A1000000\u5B57\u7B26\uFF0C\u6CA1\u6709\u622A\u65AD" });
+  if (new Set(archive.messages.map((message) => message.number)).size !== archive.messages.length)
+    context.addIssue({ code: "custom", path: ["messages"], message: "\u6D88\u606F\u5E8F\u53F7\u4E0D\u80FD\u91CD\u590D" });
+});
 function chatArchiveFileName(archive) {
   const name = archive.characterName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").slice(0, 48) || "\u89D2\u8272";
   return `story-guide-${name}-${archive.id}.json`;
@@ -5081,6 +5088,38 @@ var Repository = class {
     const range = IDBKeyRange.bound(["chat-archive", user, character], ["chat-archive", user, character, []]);
     const rows = await this.transact("readonly", (store) => store.getAll(range));
     return rows.map((row) => chatArchiveSchema.parse(row)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+  /** 仅升级同一原文快照的raw归档，原子替换；不能覆盖已有整理版本或其他消息。 */
+  async finalizeChatArchive(user, archive, check2, signal) {
+    const valid = chatArchiveSchema.parse(archive);
+    const key = ["chat-archive", user, valid.characterKey, valid.id];
+    await this.transact(
+      "readwrite",
+      (store) => {
+        const read = store.get(key);
+        read.onsuccess = () => {
+          try {
+            check2();
+            const old = chatArchiveSchema.parse(read.result);
+            if (old.status !== "raw" || valid.status === "raw" || old.chatKey !== valid.chatKey || old.transcript !== valid.transcript || JSON.stringify(old.messages) !== JSON.stringify(valid.messages))
+              throw new Error("\u539F\u6587\u5FEB\u7167\u4E0D\u4E00\u81F4");
+            const write = store.put({ ...valid, createdAt: old.createdAt }, key);
+            write.onsuccess = () => {
+              try {
+                check2();
+              } catch {
+                store.transaction.abort();
+              }
+            };
+          } catch {
+            store.transaction.abort();
+          }
+        };
+        return read;
+      },
+      "\u5F52\u6863\u5347\u7EA7\u5931\u8D25\uFF1A\u539F\u6587\u5DF2\u53D8\u5316\u6216\u5DF2\u6574\u7406\uFF0C\u539F\u5F52\u6863\u4FDD\u6301\u4E0D\u53D8",
+      signal
+    );
   }
   async removeChatArchive(user, character, id2) {
     await this.transact("readwrite", (store) => store.delete(["chat-archive", user, character, id2]));
@@ -6026,10 +6065,9 @@ var ChatMaterialsController = class {
     );
     this.guard(draft.capture);
   }
-  archive(capture, numbers, draft, cards = draft?.cards ?? []) {
+  archive(capture, numbers, draft, cards = draft?.cards ?? [], metadata = {}) {
     this.guard(capture);
     const messages = capture.messages.filter((m) => numbers.includes(m.number));
-    planChatBatches(messages);
     if (messages.length !== new Set(numbers).size) throw new Error("\u6240\u9009\u6D88\u606F\u65E0\u6548");
     if (draft && (draft.capture.transcript !== capture.transcript || JSON.stringify(draft.capture.messages) !== JSON.stringify(messages)))
       throw new Error("\u8349\u7A3F\u4E0E\u6240\u9009\u6D88\u606F\u4E0D\u4E00\u81F4\uFF0C\u8BF7\u91CD\u65B0\u6574\u7406");
@@ -6047,6 +6085,7 @@ var ChatMaterialsController = class {
       chatKey: capture.chatKey,
       transcript: capture.transcript,
       createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+      ...metadata,
       status: draft ? draft.error ? "partial" : "complete" : "raw",
       completedBatches: draft?.completedBatches ?? 0,
       totalBatches: draft?.totalBatches ?? 0,
@@ -6055,14 +6094,15 @@ var ChatMaterialsController = class {
       materials: cards
     });
   }
-  async saveArchive(archive, signal) {
+  async saveArchive(archive, signal, finalizeRaw = false) {
     const check2 = () => {
       this.guard({ chatKey: archive.chatKey, transcript: archive.transcript, messages: archive.messages });
       if (archive.characterKey !== this.snapshot.characterKey || signal?.aborted)
         throw new Error("\u89D2\u8272\u6216\u5F52\u6863\u5DF2\u5931\u6548");
     };
     check2();
-    await this.repository.saveChatArchive(this.snapshot.user, archive, check2, signal);
+    if (finalizeRaw) await this.repository.finalizeChatArchive(this.snapshot.user, archive, check2, signal);
+    else await this.repository.saveChatArchive(this.snapshot.user, archive, check2, signal);
     check2();
   }
 };
@@ -6202,6 +6242,13 @@ function openChatMaterials(materials, saved) {
       }
     }
     const info = el("p", "sg-muted");
+    const title = field("\u7247\u6BB5\u6807\u9898", "");
+    title.input.placeholder = "\u4F8B\u5982\uFF1A\u96E8\u591C\u91CD\u9022\u3001\u949F\u697C\u8C03\u67E5";
+    const tags = field("\u7247\u6BB5\u6807\u7B7E", "");
+    tags.input.placeholder = "\u7528\u9017\u53F7\u5206\u9694\uFF0C\u4F8B\u5982\uFF1A\u827E\u7433\uFF0C\u949F\u697C\uFF0C\u91CD\u9022";
+    let savedRawKey = "";
+    let savedRaw;
+    const archiveKey = (archive) => JSON.stringify([archive.transcript, archive.messages, archive.title, archive.tags]);
     const scope = el("select");
     scope.setAttribute("aria-label", "\u6574\u7406\u6D88\u606F\u6765\u6E90");
     for (const [value, label] of [
@@ -6229,6 +6276,7 @@ function openChatMaterials(materials, saved) {
       body.querySelectorAll("input,textarea,select").forEach((input) => {
         input.disabled = value;
       });
+      updateSummary();
     };
     const message = (text2, error = false) => {
       status.textContent = text2;
@@ -6260,11 +6308,11 @@ function openChatMaterials(materials, saved) {
       const { count, size } = selectedSize();
       const messages = capture?.messages.filter((m) => selected.has(m.number)) ?? [];
       const batches = count > 0 && count <= 50 ? planChatBatches(messages).length : 0;
-      summary.textContent = `\u9009\u4E2D${count}\u6761 \xB7 ${size}\u5B57\u7B26\u3002${batches ? `\u5C06\u81EA\u52A8\u5206${batches}\u6279\uFF0C\u9884\u8BA1\u8C03\u7528\u6A21\u578B${batches}\u6B21\uFF1B\u5355\u6279\u6700\u591A12000\u5B57\u7B26\uFF0C\u4E0D\u9700\u8981\u624B\u52A8\u62C6\u5206\u3002` : "\u8BF7\u9009\u62E91\u201350\u6761\u6D88\u606F\u3002"}\u5C06\u53EA\u628A\u8FD9\u4E9B\u6D88\u606F\u53D1\u7ED9\u9152\u9986\u5F53\u524D\u6A21\u578B\u3002`;
+      summary.textContent = `\u9009\u4E2D${count}\u6761 \xB7 ${size}\u5B57\u7B26\u3002\u539F\u6587\u53EF\u76F4\u63A5\u4FDD\u5B58\u6216\u5BFC\u51FA\uFF0C\u65E0\u9700AI\uFF08\u6700\u591A100\u6761\uFF09\u3002${batches ? `\u53EF\u9009AI\u6574\u7406\u81EA\u52A8\u5206${batches}\u6279\uFF0C\u9884\u8BA1${batches}\u6B21\u8BF7\u6C42\uFF0C\u6BCF\u627912000\u5B57\u7B26\uFF1B\u539F\u6587\u4F1A\u5148\u4FDD\u5B58\u3002` : count > 50 ? "AI\u6574\u7406\u6BCF\u6B21\u6700\u591A50\u6761\uFF1B\u4E0D\u5F71\u54CD\u539F\u6587\u5F52\u6863\u3002" : "\u8BF7\u52FE\u9009\u6D88\u606F\u3002"}`;
       generate.disabled = busy || !batches;
       generate.title = busy ? "\u6B63\u5728\u7B49\u5F85\u9152\u9986\u6A21\u578B\u8FD4\u56DE\uFF0C\u53EF\u53D6\u6D88\u6574\u7406\u6216\u67E5\u770B\u6392\u67E5\u65E5\u5FD7" : !batches ? "\u8BF7\u9884\u89C8\u8303\u56F4\u5E76\u52FE\u90091\u201350\u6761\u6709\u6548\u6D88\u606F" : "\u5C06\u9009\u4E2D\u6D88\u606F\u4EA4\u7ED9\u9152\u9986\u5F53\u524D\u6A21\u578B\u6574\u7406";
-      exportChat.disabled = busy || !batches;
-      saveArchive.disabled = busy || !batches;
+      exportChat.disabled = busy || !count || count > 100;
+      saveArchive.disabled = busy || !count || count > 100;
     };
     const preview = button("\u9884\u89C8\u5F53\u524D\u8303\u56F4", () => {
       try {
@@ -6320,6 +6368,7 @@ function openChatMaterials(materials, saved) {
       "\u7528\u5F53\u524D\u6A21\u578B\u6574\u7406",
       async () => {
         if (busy) return;
+        let rawReady = false;
         try {
           guard();
           if (!capture) throw new Error("\u8BF7\u5148\u9884\u89C8\u5F53\u524D\u8303\u56F4");
@@ -6329,6 +6378,9 @@ function openChatMaterials(materials, saved) {
           generate.disabled = true;
           preview.disabled = true;
           abort = new AbortController();
+          await ensureRawSaved(abort.signal);
+          guard();
+          rawReady = true;
           const { count, size } = selectedSize();
           message(`\u6B63\u5728\u4F7F\u7528\u9152\u9986\u5F53\u524D${app.info().api}\u8FDE\u63A5\u6574\u7406${count}\u6761\u3001${size}\u5B57\u7B26\u2026\uFF08\u6BCF\u6279\u6700\u591A180\u79D2\uFF09`);
           const next = await app.generate(capture, [...selected], abort.signal, (text2) => message(text2));
@@ -6336,7 +6388,7 @@ function openChatMaterials(materials, saved) {
           draft = next;
           if (!next.cards.length) {
             message(
-              next.error ? `\u90E8\u5206\u5B8C\u6210\uFF1A${next.completedBatches}/${next.totalBatches}\u6279\u3002${next.error}\u3002\u53EF\u4FDD\u5B58\u6216\u5BFC\u51FA\u539F\u6587\u5F52\u6863\u3002` : "\u6A21\u578B\u672A\u53D1\u73B0\u9002\u5408\u7684\u975E\u9732\u9AA8\u7D20\u6750\uFF0C\u672A\u4FDD\u5B58\u4EFB\u4F55\u6761\u76EE\u3002\u53EF\u76F4\u63A5\u4FDD\u5B58\u6216\u5BFC\u51FA\u539F\u6587\u5F52\u6863\u3002",
+              next.error ? `\u90E8\u5206\u5B8C\u6210\uFF1A${next.completedBatches}/${next.totalBatches}\u6279\u3002${next.error}\u3002\u53EF\u4FDD\u5B58\u6216\u5BFC\u51FA\u539F\u6587\u5F52\u6863\u3002` : "\u6A21\u578B\u672A\u751F\u6210AI\u7D20\u6750\uFF1B\u539F\u6587\u5DF2\u4FDD\u5B58\u5230\u804A\u5929\u5267\u60C5\u5F52\u6863\uFF0C\u53EF\u76F4\u63A5\u5BFC\u51FA\u3002",
               !!next.error
             );
             return;
@@ -6344,7 +6396,7 @@ function openChatMaterials(materials, saved) {
           for (const [index, card] of next.cards.entries()) {
             const row = el("section", "sg-chat-draft");
             const keep = check(`\u4FDD\u5B58\u7D20\u6750${index + 1}`, true);
-            const title = field(`\u8349\u7A3F\u6807\u9898${index + 1}`, card.title);
+            const title2 = field(`\u8349\u7A3F\u6807\u9898${index + 1}`, card.title);
             const description = field(`AI\u5F52\u7EB3\u63CF\u8FF0${index + 1}`, card.description, true);
             const opening = field(`\u539F\u521B\u5F00\u573A${index + 1}`, card.opening, true);
             const category = el("select");
@@ -6358,7 +6410,7 @@ function openChatMaterials(materials, saved) {
             row.append(
               keep.root,
               el("p", "sg-badge", "AI\u5F52\u7EB3 / \u539F\u521B\u5F00\u573A \xB7 \u9700\u73A9\u5BB6\u5BA1\u9605\uFF0C\u5E76\u975E\u539F\u6587\u4E8B\u5B9E"),
-              title.root,
+              title2.root,
               category,
               description.root,
               opening.root,
@@ -6368,7 +6420,7 @@ function openChatMaterials(materials, saved) {
             edits.push({
               card,
               keep: keep.input,
-              title: title.input,
+              title: title2.input,
               description: description.input,
               opening: opening.input,
               category
@@ -6415,17 +6467,20 @@ function openChatMaterials(materials, saved) {
             !!next.error
           );
         } catch (error) {
-          message(error instanceof Error ? error.message : "\u6574\u7406\u5931\u8D25\uFF0C\u672A\u4FDD\u5B58\u7D20\u6750", true);
+          message(
+            `${error instanceof Error ? error.message : "AI\u6574\u7406\u5931\u8D25"}${rawReady ? "\u3002\u539F\u6587\u5DF2\u5148\u4FDD\u5B58\u5230\u804A\u5929\u5267\u60C5\u5F52\u6863\uFF0C\u53EF\u76F4\u63A5\u5BFC\u51FA\u6216\u7A0D\u540E\u5904\u7406\u3002" : ""}`,
+            true
+          );
         } finally {
           setBusy(false);
           updateSummary();
           preview.disabled = false;
         }
       },
-      "sg-primary"
+      ""
     );
     generate.disabled = true;
-    const getArchive = () => {
+    const getArchive = (includeAI = true) => {
       guard();
       if (!capture) throw new Error("\u8BF7\u5148\u9884\u89C8\u5E76\u9009\u62E9\u6D88\u606F");
       const cards = draft ? edits.filter((edit) => edit.keep.checked).map((edit) => ({
@@ -6435,7 +6490,36 @@ function openChatMaterials(materials, saved) {
         opening: edit.opening.value,
         category: edit.category.value
       })) : [];
-      return app.archive(capture, [...selected], draft, cards);
+      const labels = [
+        ...new Set(
+          tags.input.value.split(/[,，、]/u).map((tag) => tag.trim()).filter(Boolean)
+        )
+      ];
+      if (labels.length > 12 || labels.some((tag) => tag.length > 30))
+        throw new Error("\u6700\u591A12\u4E2A\u6807\u7B7E\uFF0C\u6BCF\u4E2A\u4E0D\u8D85\u8FC730\u5B57");
+      if (title.input.value.trim().length > 160) throw new Error("\u7247\u6BB5\u6807\u9898\u6700\u591A160\u5B57");
+      const archive = app.archive(
+        capture,
+        [...selected],
+        includeAI ? draft : void 0,
+        includeAI ? cards : [],
+        {
+          title: title.input.value.trim() || `\u7B2C${[...selected][0] ?? 1}\u6761\u8D77\u7684\u6545\u4E8B\u7247\u6BB5`,
+          tags: labels
+        }
+      );
+      return savedRaw && savedRawKey === archiveKey(archive) ? { ...archive, id: savedRaw.id, createdAt: savedRaw.createdAt } : archive;
+    };
+    const ensureRawSaved = async (signal) => {
+      const archive = getArchive(false);
+      const key = archiveKey(archive);
+      if (savedRawKey === key) return archive;
+      await app.saveArchive(archive, signal);
+      guard();
+      signal?.throwIfAborted();
+      savedRawKey = key;
+      savedRaw = archive;
+      return archive;
     };
     const exportChat = button("\u5BFC\u51FA\u6240\u9009\u804A\u5929JSON", () => {
       try {
@@ -6456,7 +6540,12 @@ function openChatMaterials(materials, saved) {
         preview.disabled = true;
         cancel.disabled = true;
         abort = new AbortController();
-        await app.saveArchive(archive, abort.signal);
+        if (draft) {
+          const upgrade = !!savedRaw && savedRawKey === archiveKey(archive);
+          await app.saveArchive(archive, abort.signal, upgrade);
+          savedRaw = void 0;
+          savedRawKey = "";
+        } else await ensureRawSaved(abort.signal);
         guard();
         message(
           `\u5DF2\u4FDD\u5B58${archive.messages.length}\u6761\u6D88\u606F\u7684${archive.status === "partial" ? "\u90E8\u5206\u6574\u7406" : ""}\u5F52\u6863\uFF0C\u53EF\u5728\u7D20\u6750\u5E93\u201C\u804A\u5929\u5267\u60C5\u5F52\u6863\u201D\u4E2D\u518D\u6B21\u5BFC\u51FA\u3002`
@@ -6487,20 +6576,27 @@ function openChatMaterials(materials, saved) {
     });
     range.append(start.root, end.root, preview);
     const actions = el("div", "sg-toolbar");
-    actions.append(generate, cancel, saveArchive, exportChat, button("\u6392\u67E5\u65E5\u5FD7", openDiagnostics));
+    saveArchive.classList.add("sg-primary");
+    actions.append(saveArchive, exportChat);
+    const ai = el("details", "sg-details");
+    ai.open = true;
+    ai.append(el("summary", "", "\u53EF\u9009\uFF1A\u7528\u9152\u9986AI\u6574\u7406"), generate, cancel, button("\u6392\u67E5\u65E5\u5FD7", openDiagnostics));
     body.append(
       el(
         "p",
         "sg-muted",
-        "\u4EC5\u6574\u7406\u6210\u5E74\u89D2\u8272\u7684\u975E\u9732\u9AA8\u65E5\u5E38\u4E0E\u604B\u7231\u7D20\u6750\u3002\u5148\u9009\u62E9\u5F53\u524D\u804A\u5929\u6D88\u606F\uFF0C\u70B9\u51FB\u6574\u7406\u540E\u4F1A\u53D1\u9001\u81F3\u9152\u9986\u5F53\u524D\u6A21\u578B\uFF1B\u672C\u6269\u5C55\u4E0D\u4E3B\u52A8\u9644\u5E26\u5176\u4ED6\u804A\u5929\u3001\u4E16\u754C\u4E66\u6216\u89D2\u8272\u5361\uFF1B\u5BBF\u4E3B\u53CA\u5176\u4ED6\u63D2\u4EF6\u53EF\u80FD\u6309\u5404\u81EA\u8BBE\u7F6E\u5904\u7406\u63D0\u793A\u3002\u8349\u7A3F\u91C7\u7528\u524D\u4E0D\u6539\u53D8\u6545\u4E8B\u6216\u804A\u5929\u3002\u5173\u95ED\u3001\u5207\u6362\u6216\u4FEE\u6539\u804A\u5929\u4F7F\u65E7\u7ED3\u679C\u5931\u6548\u3002"
+        "\u5148\u628A\u9009\u4E2D\u7684\u804A\u5929\u5F53\u4F5C\u6545\u4E8B\u7247\u6BB5\u4FDD\u5B58\uFF1A\u4FDD\u7559\u5B8C\u6574\u539F\u6587\u53CA\u89D2\u8272\u3001\u804A\u5929\u3001\u6D88\u606F\u5E8F\u53F7\uFF0C\u4E0D\u8C03\u7528AI\u3002JSON\u53EF\u4EA4\u7ED9\u5176\u4ED6\u5DE5\u5177\u7EE7\u7EED\u6574\u7406\u3002\u53EF\u9009AI\u6574\u7406\u4F1A\u53D1\u9001\u6240\u9009\u5185\u5BB9\u81F3\u9152\u9986\u5F53\u524D\u6A21\u578B\uFF0C\u4EC5\u5F52\u7EB3\u9002\u5408\u7684\u975E\u9732\u9AA8\u7D20\u6750\uFF1B\u6A21\u578B\u5931\u8D25\u4E0D\u5F71\u54CD\u5DF2\u4FDD\u5B58\u539F\u6587\u3002\u4E0D\u4F1A\u6539\u5199\u6216\u53D1\u9001\u804A\u5929\u3002"
       ),
       info,
       scopeLabel,
       range,
+      title.root,
+      tags.root,
       sourceList,
       summary,
       actions,
       status,
+      ai,
       results
     );
     queueMicrotask(() => {
@@ -6539,6 +6635,8 @@ function openChatArchives(app) {
     const status = el("p", "", "\u6B63\u5728\u8BFB\u53D6\u5F53\u524D\u89D2\u8272\u5F52\u6863\u2026");
     status.setAttribute("role", "status");
     const list = el("div");
+    const search = field("\u641C\u7D22\u7247\u6BB5\u6807\u9898\u3001\u6807\u7B7E\u6216\u804A\u5929", "");
+    let archives = [];
     body.append(
       el(
         "p",
@@ -6546,6 +6644,7 @@ function openChatArchives(app) {
         "\u5F52\u6863\u53EA\u5C5E\u4E8E\u5F53\u524D\u8D26\u53F7\u548C\u89D2\u8272\uFF0C\u53EF\u5BFC\u51FA\u5B8C\u6574JSON\u4F9B\u5176\u4ED6\u5DE5\u5177\u7BA1\u7406\u3002\u539F\u59CB\u6D88\u606F\u4E0EAI\u5185\u5BB9\u5206\u5F00\u4FDD\u5B58\uFF1B\u90E8\u5206\u5B8C\u6210\u4E0D\u4F1A\u5192\u5145\u5B8C\u6574\u6574\u7406\u3002"
       ),
       status,
+      search.root,
       list
     );
     let busy = false;
@@ -6565,11 +6664,20 @@ function openChatArchives(app) {
     const load = async () => {
       const rows = await app.archives();
       if (!body.isConnected) return;
+      archives = rows;
+      render();
+    };
+    const render = () => {
+      const term = search.input.value.trim().toLocaleLowerCase();
+      const rows = archives.filter(
+        (archive) => [archive.title ?? "", archive.characterName, archive.chatKey, ...archive.tags ?? []].join("\n").toLocaleLowerCase().includes(term)
+      );
       list.replaceChildren();
       for (const archive of rows) {
         const row = el("section", "sg-chat-archive");
         row.append(
-          el("h3", "", archive.characterName),
+          el("h3", "", archive.title || archive.characterName),
+          el("p", "sg-muted", (archive.tags ?? []).map((tag) => `#${tag}`).join(" ")),
           el(
             "p",
             "",
@@ -6577,7 +6685,7 @@ function openChatArchives(app) {
           ),
           el(
             "small",
-            "sg-muted",
+            "sg-muted sg-archive-meta",
             `${archive.createdAt} \xB7 ${{ raw: "\u4EC5\u539F\u59CB\u6D88\u606F", complete: "\u5B8C\u6574\u6574\u7406", partial: "\u90E8\u5206\u5B8C\u6210" }[archive.status]} \xB7 ${archive.completedBatches}/${archive.totalBatches}\u6279`
           ),
           button(
@@ -6603,10 +6711,30 @@ function openChatArchives(app) {
             });
           })
         );
+        const actions = el("div", "sg-toolbar");
+        for (const action of row.querySelectorAll(":scope > button")) actions.append(action);
+        row.append(actions);
+        const preview = el("details", "sg-details");
+        preview.append(el("summary", "", `\u9605\u8BFB\u539F\u6587\uFF08${archive.messages.length}\u6761\uFF09`));
+        let rendered = false;
+        preview.addEventListener("toggle", () => {
+          if (!preview.open || rendered) return;
+          rendered = true;
+          for (const message of archive.messages) {
+            const section = el("section");
+            section.append(
+              el("h4", "", `\u7B2C${message.number}\u6761 \xB7 ${message.speaker}`),
+              el("pre", "sg-material-source", message.text)
+            );
+            preview.append(section);
+          }
+        });
+        row.append(preview);
         list.append(row);
       }
       status.textContent = rows.length ? `\u5F53\u524D\u89D2\u8272\u5171\u6709${rows.length}\u4EFD\u5F52\u6863` : "\u5F53\u524D\u89D2\u8272\u6682\u65E0\u5F52\u6863\uFF0C\u53EF\u5728\u201C\u4ECE\u5F53\u524D\u804A\u5929\u6574\u7406\u201D\u4E2D\u4FDD\u5B58\u3002";
     };
+    search.input.addEventListener("input", render);
     queueMicrotask(() => {
       void safe(load);
     });

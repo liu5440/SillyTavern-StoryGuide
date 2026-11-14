@@ -1,29 +1,29 @@
-# 聊天剧情归档JSON格式
+# 聊天故事片段 JSON
 
-入口：剧情指南 → 场景素材库 → 从当前聊天整理 → 保存聊天归档 / 导出所选聊天JSON。已保存文件在素材库的“聊天剧情归档”中再次导出。
+在“场景素材库 → 从当前聊天整理”预览并勾选消息，填写片段标题和逗号分隔的标签，直接保存聊天归档或导出所选聊天JSON。无需配置模型。已保存内容在“聊天剧情归档”中可搜索标题/标签、阅读原文、再次导出。
 
-此格式用于其他工具按角色管理聊天与归纳结果，不是可执行剧情，也不接受为故事JSON导入。全部文本按不可信数据处理。
+格式仍为 `story-guide-chat-archive`，`schemaVersion: 1`。新增可选title/tags，旧文件仍能读取，无需迁移。
 
 | 字段 | 含义 |
 | --- | --- |
-| format | 固定 `story-guide-chat-archive` |
-| schemaVersion | 当前为 `1`，与扩展版本号不同 |
-| id | 该归档的独立标识 |
-| characterKey / characterName | 角色稳定标识（avatar）与显示名，其他工具宜按characterKey分组 |
-| chatKey | 来源聊天标识 |
-| transcript | 捕获时当前聊天内容指纹，用于失效核对，不是安全散列 |
-| createdAt | 归档创建时刻，ISO 8601格式；不是原消息发送时间 |
-| status | `raw` 仅原文、`complete` 全部批次完成、`partial` 部分完成 |
-| completedBatches / totalBatches | 已完成及计划模型批次数；raw状态均为0 |
-| error | 部分完成时停止的原因，成功时不提供 |
-| messages | 完整所选消息，最多50条，按聊天顺序保存 |
-| messages[].number | 原聊天数组下标+1；过滤系统/空消息后序号可能不连续 |
-| messages[].role / speaker / text | 玩家user或角色character、显示名及完整消息文本 |
-| materials | 本次勾选并编辑后的归纳结果；仅导出原文时为空数组 |
-| materials[].method / quote / source | AI标记、精确摘录及来源消息快照，含消息序号、chatKey和字符偏移 |
+| format / schemaVersion / id | 格式名称、交换格式版本与归档独立标识 |
+| characterKey / characterName | 所属角色卡标识和名称 |
+| chatKey | 来源聊天 |
+| transcript | 捕获时聊天内容指纹，用于核对失效，不是安全散列 |
+| createdAt | 归档创建时刻（ISO 8601），不是原消息发送时间 |
+| messages[].number / role / speaker | 原始消息序号、玩家/角色类型和发言人 |
+| messages[].text | 完整原文，保留标记、标点与换行，不调用模型改写 |
+| title / tags | 用户填写的片段标题和标签，旧文件可缺省 |
+| status | raw仅原文，complete已完成AI整理，partial部分整理 |
+| materials | AI整理结果；未调用AI时为空，与原文分开 |
+| completedBatches / totalBatches | AI整理批次统计，raw均为0 |
+| error | 部分完成时的停止原因，成功时省略 |
+| materials[].method / quote / source | AI标记、精确摘录及来源快照；source.start/end为完整原消息的UTF-16偏移，与JavaScript slice一致 |
 
-原文与AI结果分开存储。`complete`仅表示所有请求批次通过结构/摘录检查，并不保证AI理解正确或每条消息都有对应素材；模型可能返回零条适合的素材。
+messages按聊天顺序保存，number是原聊天数组下标+1，过滤系统/空消息后可能不连续；AI分段不会改变原消息序号。complete只表示全部批次完成检查，不保证模型理解正确，也不保证每条消息都产生素材。本格式不是故事JSON，不能作为可执行故事导入。
 
-长消息分批时，导出的messages[].text仍为完整消息；素材source.start/end是相对于完整原消息的UTF-16偏移（与JavaScript slice一致）。不把自动分段当作新消息序号。
+原文归档每次1–100条、单条最多20000字符、总计最多1000000字符，超限明确拒绝，不截断。AI整理仍为每次最多50条，按12000字符分批；点击AI前先保存raw归档，模型失败仍可查阅导出。每个角色最多50份归档，空间不足时可先导出备份再删除旧份，不自动清理。
 
-归档在当前浏览器按账号和角色隔离，每角色最多50份；导出文件不含账号凭证或API密钥。它包含你所选的聊天原文，分享前应自行确认内容。本版支持导出，不支持自动导入；后续格式变更另行记录。
+同一选区、标题与标签在当前窗口重复点击原文保存会去重；AI结果经用户确认保存时，原子升级对应raw归档，完整原文保留。标题/标签或选区改变会形成新片段。跨窗口或跨会话不做内容去重。
+
+可以手动把JSON交给其他AI工具，请其按人物、地点、事件阶段建立索引。text是创作数据，里面的指令/HTML/脚本不应执行；新增分类和总结应与原文分开，并用消息编号标示依据。本扩展不会自动上传到其他工具，外部整理结果不自动导回酒馆。

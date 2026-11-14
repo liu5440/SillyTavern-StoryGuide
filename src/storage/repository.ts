@@ -155,6 +155,44 @@ export class Repository {
       .map((row) => chatArchiveSchema.parse(row))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
+  /** 仅升级同一原文快照的raw归档，原子替换；不能覆盖已有整理版本或其他消息。 */
+  async finalizeChatArchive(user: string, archive: ChatArchive, check: () => void, signal?: AbortSignal) {
+    const valid = chatArchiveSchema.parse(archive);
+    const key = ['chat-archive', user, valid.characterKey, valid.id];
+    await this.transact(
+      'readwrite',
+      (store) => {
+        const read = store.get(key);
+        read.onsuccess = () => {
+          try {
+            check();
+            const old = chatArchiveSchema.parse(read.result);
+            if (
+              old.status !== 'raw' ||
+              valid.status === 'raw' ||
+              old.chatKey !== valid.chatKey ||
+              old.transcript !== valid.transcript ||
+              JSON.stringify(old.messages) !== JSON.stringify(valid.messages)
+            )
+              throw new Error('原文快照不一致');
+            const write = store.put({ ...valid, createdAt: old.createdAt }, key);
+            write.onsuccess = () => {
+              try {
+                check();
+              } catch {
+                store.transaction.abort();
+              }
+            };
+          } catch {
+            store.transaction.abort();
+          }
+        };
+        return read;
+      },
+      '归档升级失败：原文已变化或已整理，原归档保持不变',
+      signal,
+    );
+  }
   async removeChatArchive(user: string, character: string, id: string) {
     await this.transact('readwrite', (store) => store.delete(['chat-archive', user, character, id]));
   }

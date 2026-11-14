@@ -41,6 +41,78 @@ async function prepare(page: import('@playwright/test').Page) {
   await expect(page.locator('.sg-chat-material-status')).toContainText('已刷新第1次预览');
 }
 
+test('原文先保存，AI失败仍能按标题标签检索、阅读并导出完整片段', async ({ page }) => {
+  await prepare(page);
+  await page.getByRole('textbox', { name: '片段标题', exact: true }).fill('书店重逢');
+  await page.getByRole('textbox', { name: '片段标签', exact: true }).fill('艾琳，重逢');
+  await page.evaluate(() => {
+    const c = window.SillyTavern?.getContext();
+    if (c)
+      c.generateRaw = async () => {
+        throw new Error('模拟模型不可用');
+      };
+  });
+  await page.getByRole('button', { name: '用当前模型整理', exact: true }).click();
+  await expect(page.locator('.sg-chat-material-status')).toContainText('原文已先保存');
+  await page.locator('.sg-modal').last().getByRole('button', { name: '关闭', exact: true }).click();
+  await page.getByRole('button', { name: '聊天剧情归档', exact: true }).click();
+  await page.getByRole('textbox', { name: '搜索片段标题、标签或聊天', exact: true }).fill('重逢');
+  await expect(page.locator('.sg-chat-archive')).toHaveCount(1);
+  await expect(page.getByRole('heading', { name: '书店重逢', exact: true })).toBeVisible();
+  await page.getByText('阅读原文（1条）', { exact: true }).click();
+  await expect(page.locator('.sg-chat-archive pre')).toContainText('<img src=x onerror=alert(1)>');
+  const event = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出归档JSON', exact: true }).click();
+  const path = await (await event).path();
+  if (!path) throw new Error('缺少导出');
+  const data = JSON.parse(await readFile(path, 'utf8')) as {
+    title: string;
+    tags: string[];
+    messages: { number: number; text: string }[];
+    status: string;
+  };
+  expect(data.status).toBe('raw');
+  expect(data.title).toBe('书店重逢');
+  expect(data.tags).toEqual(['艾琳', '重逢']);
+  expect(data.messages[0]?.number).toBe(3);
+  expect(data.messages[0]?.text).toContain('她递来一杯热茶。');
+  await page.screenshot({ path: 'test-results/raw-story-archive.png', fullPage: true });
+});
+
+test('100条消息仍可直接导出归档，AI按钮独立限制为50条', async ({ page }) => {
+  await prepare(page);
+  await page.evaluate(() => {
+    const c = window.SillyTavern?.getContext();
+    if (c)
+      c.chat = Array.from({ length: 100 }, (_, index) => ({
+        mes: `小说段落${index + 1}：调查员核对旧信的日期。`,
+        is_user: false,
+        name: '艾琳',
+      }));
+  });
+  await page.getByRole('spinbutton', { name: '起始消息序号' }).fill('1');
+  await page.getByRole('spinbutton', { name: '结束消息序号' }).fill('100');
+  await page.getByRole('button', { name: '预览当前范围', exact: true }).click();
+  await expect(page.locator('.sg-chat-message')).toHaveCount(100);
+  await expect(page.getByRole('button', { name: '用当前模型整理', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '保存聊天归档', exact: true })).toBeEnabled();
+  const event = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出所选聊天JSON', exact: true }).click();
+  const path = await (await event).path();
+  if (!path) throw new Error('缺少导出');
+  const archive = JSON.parse(await readFile(path, 'utf8')) as {
+    messages: { number: number; text: string }[];
+    status: string;
+  };
+  expect(archive.messages).toHaveLength(100);
+  expect(archive.messages[99]?.number).toBe(100);
+  expect(archive.messages[99]?.text).toBe('小说段落100：调查员核对旧信的日期。');
+  expect(archive.status).toBe('raw');
+  expect(
+    await page.evaluate(() => (window as unknown as { testPrompt?: string }).testPrompt),
+  ).toBeUndefined();
+});
+
 test('打开即预览且不调用模型，等待有秒数，窗口内可看日志并取消', async ({ page }) => {
   await prepare(page);
   await expect(page.getByRole('button', { name: '用当前模型整理' })).toBeEnabled();

@@ -12,6 +12,8 @@ export const chatArchiveSchema = z
     chatKey: z.string().min(1).max(1000),
     transcript: z.string().min(1).max(100),
     createdAt: z.string().datetime(),
+    title: z.string().trim().min(1).max(160).optional(),
+    tags: z.array(z.string().trim().min(1).max(30)).max(12).optional(),
     status: z.enum(['raw', 'complete', 'partial']),
     completedBatches: z.number().int().nonnegative(),
     totalBatches: z.number().int().nonnegative(),
@@ -28,10 +30,16 @@ export const chatArchiveSchema = z
           .strict(),
       )
       .min(1)
-      .max(50),
+      .max(100),
     materials: z.array(materialSchema).max(200),
   })
-  .strict();
+  .strict()
+  .superRefine((archive, context) => {
+    if (archive.messages.reduce((size, message) => size + message.text.length, 0) > 1000000)
+      context.addIssue({ code: 'custom', path: ['messages'], message: '原文归档最多1000000字符，没有截断' });
+    if (new Set(archive.messages.map((message) => message.number)).size !== archive.messages.length)
+      context.addIssue({ code: 'custom', path: ['messages'], message: '消息序号不能重复' });
+  });
 export type ChatArchive = z.infer<typeof chatArchiveSchema>;
 
 export function chatArchiveFileName(archive: Pick<ChatArchive, 'characterName' | 'id'>): string {
