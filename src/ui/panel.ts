@@ -9,7 +9,7 @@ import {
   type Edge,
   type RunState,
 } from '../domain/story';
-import type { ContextSnapshot } from '../host/tavern';
+import { WorldBookReadError, type ContextSnapshot } from '../host/tavern';
 import { el, button, check, field, showModal, download } from './dom';
 import { graph } from './graph';
 import { MaterialsController } from '../application/materials';
@@ -214,10 +214,12 @@ export class GuidePanel {
     this.status.classList.toggle('sg-error', error);
   }
   private async safe(action: () => void | Promise<void>) {
+    const sequence = this.loadId;
     try {
       await action();
     } catch (error) {
-      this.message(error instanceof Error ? error.message : '操作失败，请重试', true);
+      if (sequence === this.loadId)
+        this.message(error instanceof Error ? error.message : '操作失败，请重试', true);
     }
   }
   private async persist(snapshot: ContextSnapshot, story: Story, adopt: boolean) {
@@ -241,29 +243,88 @@ export class GuidePanel {
       this.saving = false;
     }
   }
-  private async load(books?: string[]) {
-    const sequence = ++this.loadId;
-    const { snapshot, stories } = await this.app.load(books);
-    if (sequence !== this.loadId || !this.dialog.open) return;
-    const story = stories[0];
-    const run = story ? await this.app.run(snapshot, story) : undefined;
-    if (sequence !== this.loadId || !this.dialog.open) return;
-    this.snapshot = snapshot;
-    this.stories = stories;
-    this.story = story;
-    this.selectedSources = new Set(snapshot.sources.filter((s) => !s.disabled).map((s) => s.id));
+  private clearContext() {
+    this.snapshot = undefined;
+    this.story = undefined;
+    this.stories = [];
+    this.run = undefined;
     this.dirty = false;
     this.undo = [];
+    this.selectedSources.clear();
+    this.grouping = undefined;
     this.characterFilter = 'all';
     this.query = '';
-    this.run = run;
-    this.title.textContent = `${snapshot.characterName}的剧情指南`;
-    await this.renderSidebar();
-    if (sequence !== this.loadId || !this.dialog.open) return;
-    this.renderContent();
-    this.message(
-      `${snapshot.sources.length} 条资料已读取 · 使用酒馆当前 ${snapshot.api} 连接生成 · 存档仅在当前浏览器`,
-    );
+    this.content.replaceChildren();
+    this.sidebar.replaceChildren();
+  }
+  private async load(books?: string[], skipped: string[] = []) {
+    const sequence = ++this.loadId;
+    this.abort?.abort();
+    this.abort = undefined;
+    this.busy = false;
+    this.closeEditors();
+    this.clearContext();
+    this.body.scrollTop = 0;
+    let target: ReturnType<GuideController['host']['currentCharacter']> | undefined;
+    try {
+      target = this.app.host.currentCharacter();
+    } catch {
+      /* 无有效角色时显示通用读取状态，不沿用旧标题。 */
+    }
+    this.title.textContent = target ? `${target.characterName} · 正在读取` : '剧情指南 · 正在读取当前角色';
+    this.message('正在读取当前角色卡和关联世界书…');
+    this.content.append(el('p', '', '正在读取当前角色资料…'));
+    try {
+      const { snapshot, stories } = await this.app.load(books, skipped);
+      if (sequence !== this.loadId || !this.dialog.open) return;
+      const story = stories[0];
+      const run = story ? await this.app.run(snapshot, story) : undefined;
+      if (sequence !== this.loadId || !this.dialog.open) return;
+      this.snapshot = snapshot;
+      this.stories = stories;
+      this.story = story;
+      this.selectedSources = new Set(snapshot.sources.filter((s) => !s.disabled).map((s) => s.id));
+      this.dirty = false;
+      this.undo = [];
+      this.characterFilter = 'all';
+      this.query = '';
+      this.run = run;
+      this.title.textContent = `${snapshot.characterName}的剧情指南`;
+      await this.renderSidebar();
+      if (sequence !== this.loadId || !this.dialog.open) return;
+      this.renderContent();
+      this.message(
+        `${snapshot.sources.length} 条资料已读取${snapshot.skippedSources?.length ? ` · 已跳过：${snapshot.skippedSources.join('、')}（资料不完整）` : ''} · 使用酒馆当前 ${snapshot.api} 连接生成 · 存档仅在当前浏览器`,
+      );
+    } catch (error) {
+      if (sequence !== this.loadId || !this.dialog.open) return;
+      this.clearContext();
+      this.title.textContent = target ? `${target.characterName} · 读取失败` : '剧情指南 · 读取失败';
+      const reason = error instanceof Error ? error.message : '当前角色资料无法读取';
+      this.message(reason, true);
+      const view = el('section', 'sg-load-error');
+      view.append(el('h3', '', '当前角色资料读取失败'), el('p', '', reason));
+      const retry = (nextSkipped: string[]) => {
+        if (sequence !== this.loadId || !this.dialog.open) return;
+        let same = false;
+        try {
+          const current = this.app.host.currentCharacter();
+          same =
+            !!target && current.characterKey === target.characterKey && current.chatKey === target.chatKey;
+        } catch {
+          /* 重试会重新报告当前角色状态。 */
+        }
+        void this.load(same ? books : undefined, same ? nextSkipped : []);
+      };
+      const actions = el('div', 'sg-toolbar');
+      actions.append(button('重试读取', () => retry(skipped)));
+      if (error instanceof WorldBookReadError)
+        actions.append(
+          button(`跳过「${error.bookName}」并继续`, () => retry([...new Set([...skipped, error.sourceKey])])),
+        );
+      view.append(actions);
+      this.content.append(view);
+    }
   }
   private async renderSidebar() {
     if (!this.snapshot) return;
@@ -341,7 +402,9 @@ export class GuidePanel {
                 brief: brief.input.value,
               },
               this.abort.signal,
-              (text) => this.message(text),
+              (text) => {
+                if (this.snapshot === snapshot && this.app.host.isCurrent(snapshot)) this.message(text);
+              },
             );
             this.guardView(snapshot);
             const run = await this.app.run(snapshot, story);
@@ -489,6 +552,15 @@ export class GuidePanel {
     this.content.replaceChildren();
     const snapshot = this.snapshot;
     if (!snapshot) return;
+    if (snapshot.skippedSources?.length) {
+      this.content.append(
+        el('p', 'sg-warning', `已跳过：${snapshot.skippedSources.join('、')}。当前资料不完整。`),
+        button('重新读取全部资料', () => {
+          if (this.dirty && !confirm('重新读取会丢弃当前未保存更改。继续？')) return;
+          return this.load();
+        }),
+      );
+    }
     const actions = el('div', 'sg-toolbar');
     if (this.stories.length) {
       const select = el('select');
@@ -541,11 +613,13 @@ export class GuidePanel {
       const empty = el('div', 'sg-welcome');
       empty.append(
         el('span', 'sg-book-mark', '✦'),
-        el('h2', '', '先读懂这个世界，再走进故事'),
+        el('h2', '', snapshot.sources.length ? '先读懂这个世界，再走进故事' : '当前角色没有可读取资料'),
         el(
           'p',
           '',
-          '点击“资料设置”选择资料，解析角色已有的经历与路线。没有世界书？也可以从人物出发，创作共同线、分支和结局。',
+          snapshot.sources.length
+            ? '点击“资料设置”选择资料，解析角色已有的经历与路线。没有世界书？也可以从人物出发，创作共同线、分支和结局。'
+            : '未读取到当前角色的人物资料或关联世界书。可重新读取，或在“资料设置”中从人物出发创作故事。',
         ),
         el('p', 'sg-muted', '默认展示完整攻略；生成后先审阅草稿，再采用为游玩依据。'),
       );

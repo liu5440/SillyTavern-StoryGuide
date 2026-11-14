@@ -57,8 +57,8 @@ export class GuideController {
       needsReview: true,
     };
   }
-  async load(books?: string[]) {
-    const snapshot = await this.host.snapshot(books);
+  async load(books?: string[], skipped?: string[]) {
+    const snapshot = await this.host.snapshot(books, skipped);
     const stories = await this.repository.loadStories(snapshot.user, snapshot.characterKey);
     if (!this.host.isCurrent(snapshot)) throw new Error('角色已切换，请重新读取');
     return { snapshot, stories };

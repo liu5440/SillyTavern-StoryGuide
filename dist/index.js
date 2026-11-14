@@ -4499,7 +4499,7 @@ function diagnosticReport() {
   return {
     format: "story-guide-diagnostics",
     schemaVersion: 1,
-    version: "0.6.4",
+    version: "0.6.5",
     modelSource: "SillyTavern.getContext().generateRaw / \u9152\u9986\u53C2\u6570\u6784\u9020\u4E0ESSE\u89E3\u6790",
     retention: "\u5F53\u524D\u9875\u9762\u5185\u5B58\u6700\u8FD1100\u6761\uFF0C\u5237\u65B0\u6E05\u7A7A",
     entries: entries.map((entry) => ({ ...entry, fields: entry.fields?.slice() }))
@@ -4696,6 +4696,13 @@ var entrySchema = z.object({
   disable: z.boolean().optional(),
   enabled: z.boolean().optional()
 }).passthrough();
+var WorldBookReadError = class extends Error {
+  constructor(bookName, sourceKey, reason) {
+    super(`\u8BFB\u53D6\u4E16\u754C\u4E66\u300C${bookName}\u300D\u5931\u8D25\uFF1A${reason}`);
+    this.bookName = bookName;
+    this.sourceKey = sourceKey;
+  }
+};
 var TavernHost = class {
   generating = false;
   transport = "raw";
@@ -4718,6 +4725,10 @@ var TavernHost = class {
     if (!character.success) throw new Error("\u8BF7\u5148\u6253\u5F00\u4E00\u4E2A\u89D2\u8272\u804A\u5929");
     return { c, character: character.data, chatKey: c.getCurrentChatId?.() ?? c.chatId ?? "" };
   }
+  currentCharacter() {
+    const { character, chatKey } = this.identity();
+    return { characterKey: character.avatar, characterName: character.name, chatKey };
+  }
   async bookOptions() {
     const { c, character } = this.identity();
     const selected = /* @__PURE__ */ new Set();
@@ -4738,7 +4749,7 @@ var TavernHost = class {
     extra.world_info.charLore?.find((l) => l.name === name)?.extraBooks.forEach((b) => selected.add(b));
     return { all: [...selected], selected: [...selected] };
   }
-  async snapshot(books) {
+  async snapshot(books, skipped = []) {
     const { c, character, chatKey } = this.identity();
     const userPath = "/scripts/user.js";
     const userModule = await import(
@@ -4770,15 +4781,32 @@ var TavernHost = class {
         e.disable === true || e.enabled === false
       );
     };
-    for (const [index, entry] of (character.data?.character_book?.entries ?? []).entries())
-      addEntry(entry, `embedded:${index}`, "\u5185\u5D4C\u4E16\u754C\u4E66");
+    if (!skipped.includes("embedded")) {
+      try {
+        for (const [index, entry] of (character.data?.character_book?.entries ?? []).entries())
+          addEntry(entry, `embedded:${index}`, "\u5185\u5D4C\u4E16\u754C\u4E66");
+      } catch {
+        throw new WorldBookReadError("\u5185\u5D4C\u4E16\u754C\u4E66", "embedded", "\u6761\u76EE\u7ED3\u6784\u65E0\u6548");
+      }
+    }
     for (const name of bookNames) {
-      if (!c.loadWorldInfo) throw new Error("\u5F53\u524D\u9152\u9986\u7F3A\u5C11 loadWorldInfo \u63A5\u53E3\uFF0C\u8BF7\u5347\u7EA7\u5230\u53D7\u652F\u6301\u7248\u672C");
-      const data = await c.loadWorldInfo(name);
+      if (skipped.includes(`book:${name}`)) continue;
+      if (!c.loadWorldInfo) throw new WorldBookReadError(name, `book:${name}`, "\u5BBF\u4E3B\u7F3A\u5C11loadWorldInfo\u63A5\u53E3");
+      let data;
+      try {
+        data = await c.loadWorldInfo(name);
+      } catch {
+        throw new WorldBookReadError(name, `book:${name}`, "\u5BBF\u4E3B\u8BFB\u53D6\u8BF7\u6C42\u5931\u8D25\uFF0C\u53EF\u91CD\u8BD5\u6216\u68C0\u67E5\u7ED1\u5B9A");
+      }
       const parsed = z.object({ entries: z.record(z.unknown()) }).passthrough().safeParse(data);
-      if (!parsed.success) throw new Error(`\u8BFB\u53D6\u4E16\u754C\u4E66\u300C${name}\u300D\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u7ED1\u5B9A\u6216\u53D6\u6D88\u9009\u62E9\u540E\u91CD\u8BD5`);
-      for (const [uid, entry] of Object.entries(parsed.data.entries))
-        addEntry(entry, `book:${name}:${uid}`, name);
+      if (!parsed.success)
+        throw new WorldBookReadError(name, `book:${name}`, "\u8FD4\u56DE\u6570\u636E\u6CA1\u6709\u6709\u6548\u7684entries\u5BF9\u8C61");
+      try {
+        for (const [uid, entry] of Object.entries(parsed.data.entries))
+          addEntry(entry, `book:${name}:${uid}`, name);
+      } catch {
+        throw new WorldBookReadError(name, `book:${name}`, "\u6761\u76EE\u7ED3\u6784\u65E0\u6548");
+      }
     }
     const unique = /* @__PURE__ */ new Map();
     for (const s of sources) {
@@ -4794,7 +4822,8 @@ var TavernHost = class {
       sources: [...unique.values()],
       bookNames,
       api: c.mainApi ?? "\u5F53\u524D\u8FDE\u63A5",
-      transcript: this.transcript()
+      transcript: this.transcript(),
+      skippedSources: skipped.filter((key) => key === "embedded" || bookNames.some((name) => key === `book:${name}`)).map((key) => key === "embedded" ? "\u5185\u5D4C\u4E16\u754C\u4E66" : key.slice(5))
     };
   }
   transcript() {
@@ -5626,8 +5655,8 @@ var GuideController = class {
       needsReview: true
     };
   }
-  async load(books) {
-    const snapshot = await this.host.snapshot(books);
+  async load(books, skipped) {
+    const snapshot = await this.host.snapshot(books, skipped);
     const stories = await this.repository.loadStories(snapshot.user, snapshot.characterKey);
     if (!this.host.isCurrent(snapshot)) throw new Error("\u89D2\u8272\u5DF2\u5207\u6362\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6");
     return { snapshot, stories };
@@ -7449,10 +7478,12 @@ var GuidePanel = class {
     this.status.classList.toggle("sg-error", error);
   }
   async safe(action) {
+    const sequence = this.loadId;
     try {
       await action();
     } catch (error) {
-      this.message(error instanceof Error ? error.message : "\u64CD\u4F5C\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5", true);
+      if (sequence === this.loadId)
+        this.message(error instanceof Error ? error.message : "\u64CD\u4F5C\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5", true);
     }
   }
   async persist(snapshot, story, adopt) {
@@ -7476,29 +7507,85 @@ var GuidePanel = class {
       this.saving = false;
     }
   }
-  async load(books) {
-    const sequence = ++this.loadId;
-    const { snapshot, stories } = await this.app.load(books);
-    if (sequence !== this.loadId || !this.dialog.open) return;
-    const story = stories[0];
-    const run = story ? await this.app.run(snapshot, story) : void 0;
-    if (sequence !== this.loadId || !this.dialog.open) return;
-    this.snapshot = snapshot;
-    this.stories = stories;
-    this.story = story;
-    this.selectedSources = new Set(snapshot.sources.filter((s) => !s.disabled).map((s) => s.id));
+  clearContext() {
+    this.snapshot = void 0;
+    this.story = void 0;
+    this.stories = [];
+    this.run = void 0;
     this.dirty = false;
     this.undo = [];
+    this.selectedSources.clear();
+    this.grouping = void 0;
     this.characterFilter = "all";
     this.query = "";
-    this.run = run;
-    this.title.textContent = `${snapshot.characterName}\u7684\u5267\u60C5\u6307\u5357`;
-    await this.renderSidebar();
-    if (sequence !== this.loadId || !this.dialog.open) return;
-    this.renderContent();
-    this.message(
-      `${snapshot.sources.length} \u6761\u8D44\u6599\u5DF2\u8BFB\u53D6 \xB7 \u4F7F\u7528\u9152\u9986\u5F53\u524D ${snapshot.api} \u8FDE\u63A5\u751F\u6210 \xB7 \u5B58\u6863\u4EC5\u5728\u5F53\u524D\u6D4F\u89C8\u5668`
-    );
+    this.content.replaceChildren();
+    this.sidebar.replaceChildren();
+  }
+  async load(books, skipped = []) {
+    const sequence = ++this.loadId;
+    this.abort?.abort();
+    this.abort = void 0;
+    this.busy = false;
+    this.closeEditors();
+    this.clearContext();
+    this.body.scrollTop = 0;
+    let target;
+    try {
+      target = this.app.host.currentCharacter();
+    } catch {
+    }
+    this.title.textContent = target ? `${target.characterName} \xB7 \u6B63\u5728\u8BFB\u53D6` : "\u5267\u60C5\u6307\u5357 \xB7 \u6B63\u5728\u8BFB\u53D6\u5F53\u524D\u89D2\u8272";
+    this.message("\u6B63\u5728\u8BFB\u53D6\u5F53\u524D\u89D2\u8272\u5361\u548C\u5173\u8054\u4E16\u754C\u4E66\u2026");
+    this.content.append(el("p", "", "\u6B63\u5728\u8BFB\u53D6\u5F53\u524D\u89D2\u8272\u8D44\u6599\u2026"));
+    try {
+      const { snapshot, stories } = await this.app.load(books, skipped);
+      if (sequence !== this.loadId || !this.dialog.open) return;
+      const story = stories[0];
+      const run = story ? await this.app.run(snapshot, story) : void 0;
+      if (sequence !== this.loadId || !this.dialog.open) return;
+      this.snapshot = snapshot;
+      this.stories = stories;
+      this.story = story;
+      this.selectedSources = new Set(snapshot.sources.filter((s) => !s.disabled).map((s) => s.id));
+      this.dirty = false;
+      this.undo = [];
+      this.characterFilter = "all";
+      this.query = "";
+      this.run = run;
+      this.title.textContent = `${snapshot.characterName}\u7684\u5267\u60C5\u6307\u5357`;
+      await this.renderSidebar();
+      if (sequence !== this.loadId || !this.dialog.open) return;
+      this.renderContent();
+      this.message(
+        `${snapshot.sources.length} \u6761\u8D44\u6599\u5DF2\u8BFB\u53D6${snapshot.skippedSources?.length ? ` \xB7 \u5DF2\u8DF3\u8FC7\uFF1A${snapshot.skippedSources.join("\u3001")}\uFF08\u8D44\u6599\u4E0D\u5B8C\u6574\uFF09` : ""} \xB7 \u4F7F\u7528\u9152\u9986\u5F53\u524D ${snapshot.api} \u8FDE\u63A5\u751F\u6210 \xB7 \u5B58\u6863\u4EC5\u5728\u5F53\u524D\u6D4F\u89C8\u5668`
+      );
+    } catch (error) {
+      if (sequence !== this.loadId || !this.dialog.open) return;
+      this.clearContext();
+      this.title.textContent = target ? `${target.characterName} \xB7 \u8BFB\u53D6\u5931\u8D25` : "\u5267\u60C5\u6307\u5357 \xB7 \u8BFB\u53D6\u5931\u8D25";
+      const reason = error instanceof Error ? error.message : "\u5F53\u524D\u89D2\u8272\u8D44\u6599\u65E0\u6CD5\u8BFB\u53D6";
+      this.message(reason, true);
+      const view = el("section", "sg-load-error");
+      view.append(el("h3", "", "\u5F53\u524D\u89D2\u8272\u8D44\u6599\u8BFB\u53D6\u5931\u8D25"), el("p", "", reason));
+      const retry = (nextSkipped) => {
+        if (sequence !== this.loadId || !this.dialog.open) return;
+        let same = false;
+        try {
+          const current = this.app.host.currentCharacter();
+          same = !!target && current.characterKey === target.characterKey && current.chatKey === target.chatKey;
+        } catch {
+        }
+        void this.load(same ? books : void 0, same ? nextSkipped : []);
+      };
+      const actions = el("div", "sg-toolbar");
+      actions.append(button("\u91CD\u8BD5\u8BFB\u53D6", () => retry(skipped)));
+      if (error instanceof WorldBookReadError)
+        actions.append(
+          button(`\u8DF3\u8FC7\u300C${error.bookName}\u300D\u5E76\u7EE7\u7EED`, () => retry([.../* @__PURE__ */ new Set([...skipped, error.sourceKey])]))
+        );
+      view.append(actions);
+      this.content.append(view);
+    }
   }
   async renderSidebar() {
     if (!this.snapshot) return;
@@ -7571,7 +7658,9 @@ var GuidePanel = class {
               brief: brief.input.value
             },
             this.abort.signal,
-            (text2) => this.message(text2)
+            (text2) => {
+              if (this.snapshot === snapshot && this.app.host.isCurrent(snapshot)) this.message(text2);
+            }
           );
           this.guardView(snapshot);
           const run = await this.app.run(snapshot, story);
@@ -7711,6 +7800,15 @@ var GuidePanel = class {
     this.content.replaceChildren();
     const snapshot = this.snapshot;
     if (!snapshot) return;
+    if (snapshot.skippedSources?.length) {
+      this.content.append(
+        el("p", "sg-warning", `\u5DF2\u8DF3\u8FC7\uFF1A${snapshot.skippedSources.join("\u3001")}\u3002\u5F53\u524D\u8D44\u6599\u4E0D\u5B8C\u6574\u3002`),
+        button("\u91CD\u65B0\u8BFB\u53D6\u5168\u90E8\u8D44\u6599", () => {
+          if (this.dirty && !confirm("\u91CD\u65B0\u8BFB\u53D6\u4F1A\u4E22\u5F03\u5F53\u524D\u672A\u4FDD\u5B58\u66F4\u6539\u3002\u7EE7\u7EED\uFF1F")) return;
+          return this.load();
+        })
+      );
+    }
     const actions = el("div", "sg-toolbar");
     if (this.stories.length) {
       const select = el("select");
@@ -7762,11 +7860,11 @@ var GuidePanel = class {
       const empty = el("div", "sg-welcome");
       empty.append(
         el("span", "sg-book-mark", "\u2726"),
-        el("h2", "", "\u5148\u8BFB\u61C2\u8FD9\u4E2A\u4E16\u754C\uFF0C\u518D\u8D70\u8FDB\u6545\u4E8B"),
+        el("h2", "", snapshot.sources.length ? "\u5148\u8BFB\u61C2\u8FD9\u4E2A\u4E16\u754C\uFF0C\u518D\u8D70\u8FDB\u6545\u4E8B" : "\u5F53\u524D\u89D2\u8272\u6CA1\u6709\u53EF\u8BFB\u53D6\u8D44\u6599"),
         el(
           "p",
           "",
-          "\u70B9\u51FB\u201C\u8D44\u6599\u8BBE\u7F6E\u201D\u9009\u62E9\u8D44\u6599\uFF0C\u89E3\u6790\u89D2\u8272\u5DF2\u6709\u7684\u7ECF\u5386\u4E0E\u8DEF\u7EBF\u3002\u6CA1\u6709\u4E16\u754C\u4E66\uFF1F\u4E5F\u53EF\u4EE5\u4ECE\u4EBA\u7269\u51FA\u53D1\uFF0C\u521B\u4F5C\u5171\u540C\u7EBF\u3001\u5206\u652F\u548C\u7ED3\u5C40\u3002"
+          snapshot.sources.length ? "\u70B9\u51FB\u201C\u8D44\u6599\u8BBE\u7F6E\u201D\u9009\u62E9\u8D44\u6599\uFF0C\u89E3\u6790\u89D2\u8272\u5DF2\u6709\u7684\u7ECF\u5386\u4E0E\u8DEF\u7EBF\u3002\u6CA1\u6709\u4E16\u754C\u4E66\uFF1F\u4E5F\u53EF\u4EE5\u4ECE\u4EBA\u7269\u51FA\u53D1\uFF0C\u521B\u4F5C\u5171\u540C\u7EBF\u3001\u5206\u652F\u548C\u7ED3\u5C40\u3002" : "\u672A\u8BFB\u53D6\u5230\u5F53\u524D\u89D2\u8272\u7684\u4EBA\u7269\u8D44\u6599\u6216\u5173\u8054\u4E16\u754C\u4E66\u3002\u53EF\u91CD\u65B0\u8BFB\u53D6\uFF0C\u6216\u5728\u201C\u8D44\u6599\u8BBE\u7F6E\u201D\u4E2D\u4ECE\u4EBA\u7269\u51FA\u53D1\u521B\u4F5C\u6545\u4E8B\u3002"
         ),
         el("p", "sg-muted", "\u9ED8\u8BA4\u5C55\u793A\u5B8C\u6574\u653B\u7565\uFF1B\u751F\u6210\u540E\u5148\u5BA1\u9605\u8349\u7A3F\uFF0C\u518D\u91C7\u7528\u4E3A\u6E38\u73A9\u4F9D\u636E\u3002")
       );

@@ -79,9 +79,19 @@ export interface ContextSnapshot {
   bookNames: string[];
   api: string;
   transcript: string;
+  skippedSources?: string[];
+}
+export class WorldBookReadError extends Error {
+  constructor(
+    readonly bookName: string,
+    readonly sourceKey: string,
+    reason: string,
+  ) {
+    super(`读取世界书「${bookName}」失败：${reason}`);
+  }
 }
 export interface Host {
-  snapshot: (books?: string[]) => Promise<ContextSnapshot>;
+  snapshot: (books?: string[], skipped?: string[]) => Promise<ContextSnapshot>;
   isCurrent: (snapshot: ContextSnapshot) => boolean;
   generate: (prompt: string, signal: AbortSignal) => Promise<string>;
 }
@@ -107,6 +117,10 @@ export class TavernHost implements Host {
     if (!character.success) throw new Error('请先打开一个角色聊天');
     return { c, character: character.data, chatKey: c.getCurrentChatId?.() ?? c.chatId ?? '' };
   }
+  currentCharacter() {
+    const { character, chatKey } = this.identity();
+    return { characterKey: character.avatar, characterName: character.name, chatKey };
+  }
   async bookOptions(): Promise<{ all: string[]; selected: string[] }> {
     const { c, character } = this.identity();
     const selected = new Set<string>();
@@ -129,7 +143,7 @@ export class TavernHost implements Host {
     extra.world_info.charLore?.find((l) => l.name === name)?.extraBooks.forEach((b) => selected.add(b));
     return { all: [...selected], selected: [...selected] };
   }
-  async snapshot(books?: string[]): Promise<ContextSnapshot> {
+  async snapshot(books?: string[], skipped: string[] = []): Promise<ContextSnapshot> {
     const { c, character, chatKey } = this.identity();
     const userPath = '/scripts/user.js';
     const userModule: unknown = await import(/* @vite-ignore */ userPath);
@@ -162,18 +176,35 @@ export class TavernHost implements Host {
         e.disable === true || e.enabled === false,
       );
     };
-    for (const [index, entry] of (character.data?.character_book?.entries ?? []).entries())
-      addEntry(entry, `embedded:${index}`, '内嵌世界书');
+    if (!skipped.includes('embedded')) {
+      try {
+        for (const [index, entry] of (character.data?.character_book?.entries ?? []).entries())
+          addEntry(entry, `embedded:${index}`, '内嵌世界书');
+      } catch {
+        throw new WorldBookReadError('内嵌世界书', 'embedded', '条目结构无效');
+      }
+    }
     for (const name of bookNames) {
-      if (!c.loadWorldInfo) throw new Error('当前酒馆缺少 loadWorldInfo 接口，请升级到受支持版本');
-      const data = await c.loadWorldInfo(name);
+      if (skipped.includes(`book:${name}`)) continue;
+      if (!c.loadWorldInfo) throw new WorldBookReadError(name, `book:${name}`, '宿主缺少loadWorldInfo接口');
+      let data: unknown;
+      try {
+        data = await c.loadWorldInfo(name);
+      } catch {
+        throw new WorldBookReadError(name, `book:${name}`, '宿主读取请求失败，可重试或检查绑定');
+      }
       const parsed = z
         .object({ entries: z.record(z.unknown()) })
         .passthrough()
         .safeParse(data);
-      if (!parsed.success) throw new Error(`读取世界书「${name}」失败，请检查绑定或取消选择后重试`);
-      for (const [uid, entry] of Object.entries(parsed.data.entries))
-        addEntry(entry, `book:${name}:${uid}`, name);
+      if (!parsed.success)
+        throw new WorldBookReadError(name, `book:${name}`, '返回数据没有有效的entries对象');
+      try {
+        for (const [uid, entry] of Object.entries(parsed.data.entries))
+          addEntry(entry, `book:${name}:${uid}`, name);
+      } catch {
+        throw new WorldBookReadError(name, `book:${name}`, '条目结构无效');
+      }
     }
     // 内嵌书与已导入的绑定书经常完全重复；保留首份文本和有效条目，防止重复计费。
     const unique = new Map<string, Source>();
@@ -191,6 +222,9 @@ export class TavernHost implements Host {
       bookNames,
       api: c.mainApi ?? '当前连接',
       transcript: this.transcript(),
+      skippedSources: skipped
+        .filter((key) => key === 'embedded' || bookNames.some((name) => key === `book:${name}`))
+        .map((key) => (key === 'embedded' ? '内嵌世界书' : key.slice(5))),
     };
   }
   transcript(): string {
