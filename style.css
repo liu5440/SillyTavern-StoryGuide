@@ -976,3 +976,29 @@
   outline: 2px solid #f5cf80;
   outline-offset: 3px;
 }
+
+/* 顶部操作区独立定义色彩，避免宿主主题及未继承的手册变量造成深底深字。 */
+.sg-workspace .sg-workspace-header > .sg-button {
+  color: #f4f7fc;
+  background: #304259;
+  border-color: #7389a6;
+  text-shadow: none;
+}
+.sg-workspace .sg-workspace-header > .sg-button.sg-primary,
+.sg-workspace .sg-workspace-header > .sg-button:not(:disabled):is(:hover, :focus) {
+  color: #19202b;
+  background: #f0cc82;
+  border-color: #ffe5ae;
+}
+.sg-workspace .sg-workspace-header > .sg-button:not(:disabled):active {
+  color: #19202b;
+  background: #ffe0a0;
+  border-color: #fff0ce;
+}
+.sg-workspace .sg-workspace-header > .sg-button:disabled {
+  color: #bac6d8;
+  background: #263246;
+  border-color: #50617a;
+  opacity: 1;
+  cursor: not-allowed;
+}
